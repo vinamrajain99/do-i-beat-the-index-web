@@ -2,7 +2,7 @@
 
 Web app version of [do-i-beat-the-index](https://github.com/vinamrajain99/do-i-beat-the-index) — the same deposit-mirrored portfolio-vs-benchmark analysis, but with login, persistent saved analyses, and a browser UI.
 
-**Status: under construction.** Phases 1 (auth), 2 (CSV upload + new-analysis form), and 3 (Python analysis worker, math-only) are complete; the worker's HTTP wrapper + UI polling, the results UI, and delete are still in progress.
+**Status: under construction.** Phases 1 (auth), 2 (CSV upload + new-analysis form), 3 (Python analysis worker), and 3.5 (HTTP wrapper + UI polling) are complete. The results UI (Plotly chart + summary table), delete-an-analysis UI, and Vercel deploy are still in progress.
 
 ## Architecture
 
@@ -19,13 +19,20 @@ Web app version of [do-i-beat-the-index](https://github.com/vinamrajain99/do-i-b
 
 [supabase.com](https://supabase.com) → New project. Save the database password somewhere safe.
 
-Once it's up, go to **Project Settings → API** and copy the three credentials below into a new `.env.local` file in this directory (start from `.env.local.example`):
+Once it's up, go to **Project Settings → API** and copy the credentials below into a new `.env.local` file in this directory (start from `.env.local.example`):
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
+
+# Optional. Only needed if your project signs user sessions with HS256.
+# Modern Supabase projects use asymmetric (ES256) signing keys, in which
+# case `api/analyze.py` fetches the public key from the project's
+# .well-known/jwks.json automatically — leave this blank.
+# Find under Project Settings → JWT Keys / JWT Secret if you do need it.
+SUPABASE_JWT_SECRET=
 ```
 
 ### 2. Apply the database schema
@@ -39,35 +46,60 @@ In the Supabase dashboard:
 - **Auth → URL Configuration**: set **Site URL** to `http://localhost:3000` (later: your Vercel URL). Add `http://localhost:3000/auth/callback` and `http://localhost:3000/auth/reset-password` to **Redirect URLs**.
 - **Auth → Providers → Email**: enable, and turn on "Confirm email" (default).
 
-### 4. Install and run
+### 4. Install npm deps
 
 ```bash
 npm install
-npm run dev
 ```
 
-App is at [http://localhost:3000](http://localhost:3000).
-
-### 5. (Optional) Run the analysis worker locally
-
-The Python worker in `worker/` consumes an `analyses` row id, downloads the
-CSV from Supabase Storage, runs the math, and writes `results_json` +
-`status='completed'` back to the row. The HTTP wrapper for it is not built
-yet — you invoke it from the CLI.
+### 5. Python venv for the analysis worker
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r worker/requirements.txt
+.venv/bin/python -m pip install -r requirements.txt
+```
 
-# After submitting an analysis in the web UI, grab its id from /dashboard
-# and run:
-python -m worker.analyze <analysis_id>
+### 6. Run the dev servers (two terminals)
+
+The analysis worker runs as a Vercel Python serverless function (`api/analyze.py`).
+For local development, we run it as a stand-alone HTTP server via stdlib
+`ThreadingHTTPServer` — Next.js proxies `/api/analyze` to it through a
+dev-only rewrite. This avoids requiring the Vercel CLI for local testing.
+
+**Terminal A** — Python handler on `:3001`:
+
+```bash
+.venv/bin/python scripts/dev_python_server.py
+```
+
+**Terminal B** — Next.js on `:3000`:
+
+```bash
+npm run dev
+```
+
+App is at [http://localhost:3000](http://localhost:3000). Submitting an
+analysis from the UI POSTs through to the Python server, which calls into
+`worker.analyze.main()`, computes XIRR/CAGR + benchmark simulations, and
+writes `results_json` back. The UI polls every 3 seconds until the row
+flips to `completed` or `failed`.
+
+If only the UI changes, you don't need Terminal A. If `api/analyze.py` or
+anything under `worker/` changes, Ctrl-C and restart Terminal A —
+`BaseHTTPRequestHandler` doesn't hot-reload.
+
+### 7. (Optional) Invoke the worker directly from the CLI
+
+Useful for debugging math without the HTTP layer in the way:
+
+```bash
+.venv/bin/python -m worker.analyze <analysis_id>
 ```
 
 The worker reads `.env.local` for the Supabase URL + service role key and
 caches benchmark prices in the `benchmark_price_cache` table (one yfinance
-fetch per ticker per day).
+fetch per ticker per day). It's idempotent — running it on an already-
+completed row is a clean no-op.
 
 ## Project structure
 
@@ -89,7 +121,9 @@ src/
 │       ├── new/
 │       │   ├── page.tsx         form: name, value, benchmark chips, CSV upload
 │       │   └── actions.ts       server action: validate, insert, upload, redirect
-│       └── [id]/page.tsx        results page (Phase 2: pending placeholder)
+│       └── [id]/
+│           ├── page.tsx         results page (Phase 4 chart TBD; runner wired)
+│           └── analysis-runner.tsx  client: POST /api/analyze + 3s polling
 ├── components/ui/               shadcn primitives (Button, Input, Label, Card)
 ├── lib/
 │   ├── utils.ts                 cn() helper
@@ -99,15 +133,24 @@ src/
 │       └── proxy.ts             token refresh + route protection logic
 └── proxy.ts                     Next.js proxy entrypoint (formerly middleware.ts)
 
+api/
+└── analyze.py                   Vercel Python serverless: JWT verify + worker.analyze.main()
+
 supabase/migrations/             SQL migrations, apply via Dashboard SQL Editor
 
-worker/                          Python analysis worker (Phase 3)
-├── analyze.py                   entry: row → results_json + status
+worker/                          Python analysis worker
+├── analyze.py                   entry: CAS + parse + simulate + write-back
 ├── rh_parser.py                 Robinhood CSV → list[CashFlow]
 ├── metrics.py                   XIRR + CAGR
 ├── benchmark.py                 yfinance + deposit-mirrored sim (Postgres-cached)
 ├── chart.py                     Plotly figure builder (returns JSON)
-└── requirements.txt             Python deps
+└── requirements.txt             stub: `-r ../requirements.txt`
+
+scripts/
+└── dev_python_server.py         stdlib HTTPServer wrapping api/analyze (local dev)
+
+requirements.txt                 root Python deps (Vercel reads from here)
+vercel.json                      function config (maxDuration, memory)
 ```
 
 ## Security notes
@@ -121,10 +164,11 @@ worker/                          Python analysis worker (Phase 3)
 
 - [x] Phase 1: Auth (sign up, log in, password reset)
 - [x] Phase 2: New-analysis form + CSV upload to Supabase Storage
-- [x] Phase 3: Python analysis worker (math-only, local CLI; HTTP wrapper TBD)
+- [x] Phase 3: Python analysis worker (math-only, local CLI)
+- [x] Phase 3.5: HTTP wrapper (`api/analyze.py`) + UI trigger/polling
 - [ ] Phase 4: Results page (Plotly chart + summary table)
 - [ ] Phase 5: Delete-an-analysis UI to free a slot
-- [ ] Phase 6: Deploy to Vercel (Python serverless `/api/analyze` + UI polling)
+- [ ] Phase 6: Deploy to Vercel (prod env vars + Auth redirect URLs)
 
 ## License
 

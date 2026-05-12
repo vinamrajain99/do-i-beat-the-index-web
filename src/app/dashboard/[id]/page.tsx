@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/server";
 import type { Analysis, AnalysisStatus } from "@/lib/types";
+import { AnalysisRunner } from "./analysis-runner";
 
 const STATUS_LABEL: Record<AnalysisStatus, string> = {
   pending: "Queued",
@@ -126,15 +127,22 @@ export default async function AnalysisDetailPage({
       {analysis.status === "pending" || analysis.status === "running" ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Queued for analysis</CardTitle>
+            <CardTitle className="text-base">
+              {analysis.status === "pending" ? "Queued" : "Running"}
+            </CardTitle>
             <CardDescription>
-              Your CSV has been saved securely. The analysis worker is the next
-              phase of this project, so for now this page is a placeholder.
-              When the worker ships, this page will show an interactive Plotly
-              chart and a summary table (XIRR, CAGR, %/$ delta vs. actual) for
-              each benchmark.
+              We&apos;re computing your XIRR, CAGR, and the deposit-mirrored
+              counterfactual for each benchmark. This page will refresh
+              automatically when the results are ready.
             </CardDescription>
           </CardHeader>
+          <CardContent>
+            <AnalysisRunner
+              analysisId={analysis.id}
+              initialStatus={analysis.status}
+              createdAt={analysis.created_at}
+            />
+          </CardContent>
         </Card>
       ) : analysis.status === "failed" ? (
         <Card>

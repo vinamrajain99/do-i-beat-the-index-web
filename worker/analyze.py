@@ -154,10 +154,22 @@ def main(analysis_id: str) -> int:
         f"benchmarks={a['benchmark_tickers']})"
     )
 
-    # --- Mark running ---
-    sb.table("analyses").update({"status": "running"}).eq(
-        "id", analysis_id
-    ).execute()
+    # --- CAS: only flip pending → running. If the row isn't pending,
+    # someone else (another invocation, or a prior run) already claimed it.
+    # Return 0 so the HTTP wrapper treats double-trigger as a no-op. ---
+    cas = (
+        sb.table("analyses")
+        .update({"status": "running"})
+        .eq("id", analysis_id)
+        .eq("status", "pending")
+        .execute()
+    )
+    if not cas.data:
+        print(
+            f"Analysis {analysis_id} is not pending "
+            f"(current status={a['status']!r}); nothing to do."
+        )
+        return 0
 
     try:
         # --- Download CSV from storage to a temp file ---
