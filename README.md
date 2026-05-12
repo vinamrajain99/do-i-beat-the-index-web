@@ -2,7 +2,7 @@
 
 Web app version of [do-i-beat-the-index](https://github.com/vinamrajain99/do-i-beat-the-index) — the same deposit-mirrored portfolio-vs-benchmark analysis, but with login, persistent saved analyses, and a browser UI.
 
-**Status: under construction.** Phases 1 (auth), 2 (CSV upload + new-analysis form), 3 (Python analysis worker), and 3.5 (HTTP wrapper + UI polling) are complete. The results UI (Plotly chart + summary table), delete-an-analysis UI, and Vercel deploy are still in progress.
+**Status: under construction.** Phases 1 – 5 are complete. Vercel deploy (Phase 6) is the only remaining roadmap item.
 
 ## Architecture
 
@@ -117,13 +117,17 @@ src/
 │   │   ├── callback/route.ts    exchanges email-link code for session
 │   │   └── sign-out/actions.ts  server action used by Sign out button
 │   └── dashboard/
-│       ├── page.tsx             list of analyses (max 5) + "+ New analysis" CTA
+│       ├── page.tsx             list of analyses (max 5) + "+ New analysis" + per-row Delete
+│       ├── actions.ts           deleteAnalysisAction (row + CSV cleanup + redirect)
+│       ├── delete-button.tsx    client: confirm + invoke delete action
 │       ├── new/
 │       │   ├── page.tsx         form: name, value, benchmark chips, CSV upload
 │       │   └── actions.ts       server action: validate, insert, upload, redirect
 │       └── [id]/
-│           ├── page.tsx         results page (Phase 4 chart TBD; runner wired)
-│           └── analysis-runner.tsx  client: POST /api/analyze + 3s polling
+│           ├── page.tsx         server: header, submission card, status-keyed body
+│           ├── analysis-runner.tsx  client: POST /api/analyze + 3s polling
+│           ├── plotly-chart.tsx     client: dynamic-imported Plotly.newPlot
+│           └── results-summary.tsx  server: HTML metrics table
 ├── components/ui/               shadcn primitives (Button, Input, Label, Card)
 ├── lib/
 │   ├── utils.ts                 cn() helper
@@ -166,8 +170,8 @@ vercel.json                      function config (maxDuration, memory)
 - [x] Phase 2: New-analysis form + CSV upload to Supabase Storage
 - [x] Phase 3: Python analysis worker (math-only, local CLI)
 - [x] Phase 3.5: HTTP wrapper (`api/analyze.py`) + UI trigger/polling
-- [ ] Phase 4: Results page (Plotly chart + summary table)
-- [ ] Phase 5: Delete-an-analysis UI to free a slot
+- [x] Phase 4: Results page — interactive Plotly chart + HTML summary table
+- [x] Phase 5: Delete-an-analysis UI to free a slot
 - [ ] Phase 6: Deploy to Vercel (prod env vars + Auth redirect URLs)
 
 ## License

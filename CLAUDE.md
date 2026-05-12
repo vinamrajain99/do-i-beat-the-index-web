@@ -61,12 +61,14 @@ User chose: deposit-mirror (the only math), frozen snapshots, separate repo from
 
 1. **Sign in** via Supabase email/password (`src/app/auth/...`).
 2. **Submit form** at `/dashboard/new` → server action validates, inserts a `pending` row in `public.analyses`, uploads the CSV to `csvs/<uid>/<id>.csv`, redirects to `/dashboard/[id]`.
-3. **`/dashboard/[id]` mounts** the `AnalysisRunner` client component (only when status is `pending`/`running`). The runner reads the browser session, POSTs `{analysis_id}` to `/api/analyze` with a `Authorization: Bearer <user-jwt>` header.
+3. **`/dashboard/[id]` mounts** the `AnalysisRunner` client component (only when status is `pending`/`running`). The runner reads the browser session, POSTs `{analysis_id}` to `/api/analyze` with an `Authorization: Bearer <user-jwt>` header.
 4. **`api/analyze.py`** (Vercel Python serverless or local Python dev server, see "Local development" below) verifies the JWT, confirms the row's `user_id` matches, then calls `worker.analyze.main(id)`.
 5. **`worker.analyze.main`** does a `pending → running` **CAS** (atomic conditional update — returns 0 if the row isn't pending). If the CAS wins, it downloads the CSV, parses, computes "actual" metrics, simulates each benchmark via the cached yfinance prices in `public.benchmark_price_cache`, builds the Plotly figure JSON, and writes `status='completed'` + `results_json` back. On any error: `status='failed'` + `error_message`.
 6. **Client polls** `router.refresh()` every 3 s. The server re-render reflects the new status; once `completed` or `failed`, the runner unmounts and polling stops.
+7. **`completed` state** renders the `PlotlyChart` (`results_json.figure_json` rehydrated client-side via `Plotly.newPlot`) and the `ResultsSummary` HTML table (`results_json.summary`).
+8. **Delete**: a `DeleteButton` on each list row and on the detail-page footer invokes `deleteAnalysisAction` — RLS-scoped row delete + best-effort CSV cleanup + redirect to `/dashboard`.
 
-`results_json` shape (frozen contract between worker and the future Phase 4 UI — keep `src/lib/types.ts` in lockstep when Phase 4 lands):
+`results_json` shape (frozen contract between worker and frontend — keep `worker/analyze.py`, `src/lib/types.ts`, and the HTML summary in lockstep):
 ```jsonc
 {
   "figure_json": "<Plotly figure as JSON string>",
@@ -84,6 +86,8 @@ User chose: deposit-mirror (the only math), frozen snapshots, separate repo from
 }
 ```
 
+Metric values that would be NaN/Inf (e.g. XIRR on a deeply negative portfolio) are flattened to `null` at serialize time — both the worker's `_serialize_metric_value` and the TS `MetricsSummary` type encode this.
+
 ## Critical non-obvious decisions
 
 - **`getUser()` not `getSession()` for auth decisions.** `getSession()` reads cookies without verifying the JWT against Supabase — unsafe. The proxy uses `getUser()`.
@@ -94,6 +98,8 @@ User chose: deposit-mirror (the only math), frozen snapshots, separate repo from
 - **CAS lives inside `worker.analyze.main`** (not in the HTTP wrapper). The atomic `pending → running` update is the only source of truth for "this row is mine to process." Both the CLI invocation and the HTTP wrapper inherit idempotency from it.
 - **Supabase uses asymmetric JWTs (ES256) on this project**, not the dashboard's "JWT Secret" (HS256). `api/analyze.py` inspects the JWT header `alg` and routes to either the legacy HS256 path (using `SUPABASE_JWT_SECRET`) or the modern asymmetric path (using `pyjwt.PyJWKClient` against `<project>.supabase.co/auth/v1/.well-known/jwks.json`). See DECISIONS.md (2026-05-12 entry) for the discovery and rationale. `SUPABASE_JWT_SECRET` is optional in prod for asymmetric-flow projects.
 - **Local dev uses a stand-alone Python HTTP server**, not `vercel dev`. See "Local development" below + DECISIONS.md.
+- **Chart and metrics table are decoupled.** `worker/chart.py` returns a chart-only Plotly figure. The metrics summary is rendered as a native HTML `<table>` in `src/app/dashboard/[id]/results-summary.tsx`. The HTML version is theme-aware, accessible, and easy to restyle. See DECISIONS.md.
+- **Page layout uses per-card max-widths**, not a single page-level constraint. Outer `<main>` is `max-w-7xl`; text-shaped cards (header, submission, queued, failed) carry `max-w-3xl mx-auto w-full` individually; the results card spans the full 1280 px. When adding new cards, be deliberate about which width to apply. See DECISIONS.md.
 
 ## Local development
 
@@ -162,17 +168,21 @@ src/
 │   │   ├── callback/route.ts      exchangeCodeForSession on email-link click
 │   │   └── sign-out/actions.ts    signOut + redirect
 │   └── dashboard/
-│       ├── page.tsx               list of analyses (max 5) + "+ New analysis" CTA
+│       ├── page.tsx               list of analyses (max 5) + "+ New analysis" CTA + per-row Delete
+│       ├── actions.ts             deleteAnalysisAction (row delete + CSV cleanup + redirect)
+│       ├── delete-button.tsx      client: confirm + invoke deleteAnalysisAction
 │       ├── new/
 │       │   ├── page.tsx           form: name, value, benchmark chips, CSV
 │       │   └── actions.ts         createAnalysisAction (insert + upload + redirect)
 │       └── [id]/
-│           ├── page.tsx           server component: header, submission card, status-keyed body
-│           └── analysis-runner.tsx  client component: POST /api/analyze + 3s polling
+│           ├── page.tsx           server: header, submission, status-keyed body, delete in footer
+│           ├── analysis-runner.tsx  client: POST /api/analyze + 3s polling
+│           ├── plotly-chart.tsx   client: dynamic import of plotly.js-dist-min + Plotly.newPlot
+│           └── results-summary.tsx  server: HTML metrics table (Your portfolio + benchmarks + Δ)
 ├── components/ui/                 Button, Input, Label, Card (shadcn primitives)
 ├── lib/
 │   ├── utils.ts                   cn() helper
-│   ├── types.ts                   Analysis type + BENCHMARK_DEFAULTS + caps (Phase 4 adds results_json type)
+│   ├── types.ts                   Analysis + ResultsJson/MetricsSummary types + caps
 │   └── supabase/
 │       ├── client.ts              createBrowserClient
 │       ├── server.ts              createServerClient with cookies()
@@ -188,7 +198,7 @@ worker/                            Python analysis package
 ├── rh_parser.py                   Robinhood CSV → list[CashFlow]
 ├── metrics.py                     XIRR + CAGR
 ├── benchmark.py                   yfinance + deposit-mirrored sim (Postgres cache)
-├── chart.py                       Plotly figure builder → fig.to_json()
+├── chart.py                       Plotly figure builder → fig.to_json() (chart only; no table)
 └── requirements.txt               stub: `-r ../requirements.txt`
 
 scripts/
