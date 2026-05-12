@@ -34,9 +34,11 @@ A "buy-mirroring" alternative was considered and rejected for the CLI; we inheri
 
 User chose: deposit-mirror (the only math), frozen snapshots, separate repo from the CLI.
 
-## What's built (Phases 1 & 2 — complete)
+## What's built (Phases 1, 2, & 3 — complete)
 
-Both phases pass `npx tsc --noEmit` and `npm run lint` clean.
+All three phases pass `npx tsc --noEmit` and `npm run lint` clean. Phase 3 is
+**math-only** — the worker runs locally; the HTTP wrapper and UI polling are
+the next phase.
 
 ### Phase 1 — auth scaffold (commit `9b3710a` + follow-ups)
 
@@ -69,14 +71,48 @@ Both phases pass `npx tsc --noEmit` and `npm run lint` clean.
 - `src/app/dashboard/[id]/page.tsx` — server component placeholder for the results page. Renders status-specific copy. Phase 4 replaces the body with the Plotly chart + summary table.
 - `next.config.ts` — bumps `experimental.serverActions.bodySizeLimit` to `'12mb'` so 10 MB CSVs fit (default is 1 MB).
 
+### Phase 3 — analysis worker (math-only, local CLI)
+
+Ported from the companion CLI repo (`/Users/aayushipandit/Desktop/Claude-Work/Robinhood portfolio analyser/`) on 2026-05-12. Math is unchanged; only the cache backing store and the chart output shape differ.
+
+- `worker/` Python package at the repo root.
+- `worker/analyze.py` — entry point. Reads `analyses` row by id (service_role bypasses RLS), flips `status='running'`, downloads the CSV from `csvs/<uid>/<id>.csv`, parses → computes "actual" metrics → simulates each benchmark → builds a Plotly figure JSON, writes `status='completed'` + `results_json` back. On failure, writes `status='failed'` + `error_message`. Validates the analysis_id is a UUID before hitting the DB.
+- `worker/rh_parser.py`, `worker/metrics.py` — verbatim ports of the CLI files (only the relative imports changed).
+- `worker/benchmark.py` — port with the parquet cache replaced by `public.benchmark_price_cache` table. Freshness heuristic: if any row for this ticker has `fetched_at >= today`, the cache is trusted; otherwise re-fetch full history from yfinance and upsert.
+- `worker/chart.py` — port with `render_html(...)` replaced by `build_figure_json(...)` returning `fig.to_json()`. All trace/layout construction is identical.
+- `worker/requirements.txt` — pandas, yfinance, plotly, scipy, supabase, python-dotenv, python-dateutil. No pyarrow (no parquet).
+
+`results_json` shape (consumed by Phase 4):
+```jsonc
+{
+  "figure_json": "<Plotly figure as JSON string>",
+  "summary": {
+    "actual":        { total_deposited, total_withdrawn, net_invested,
+                       final_value, dollar_gain, total_return_pct,
+                       cagr, xirr },
+    "benchmarks":    { TICKER: <same shape>, ... },
+    "deposits_count": int,
+    "withdrawals_count": int,
+    "date_range":    [first_iso, last_iso],
+    "benchmark_ran_out": { TICKER: bool, ... },
+    "as_of":         "<today iso>"
+  }
+}
+```
+
+Run an analysis end-to-end (after `source .venv/bin/activate`):
+```bash
+python -m worker.analyze <analysis_id>
+```
+
 ## What's NOT built yet
 
-- **Phase 3**: Python serverless `/api/analyze`. Receives `analysis_id`, fetches CSV from storage using service_role, runs the CLI math (port `rh_parser.py`, `benchmark.py`, `metrics.py` from the CLI repo as needed), writes `results_json` and `status='completed'`. Use `benchmark_price_cache` table to avoid re-fetching from yfinance.
-- **Phase 4**: Results page `/dashboard/<analysis_id>` rendering Plotly chart from `results_json` and a summary table. (The route exists today as a placeholder; this phase just replaces the body.)
+- **Phase 3.5** (next): wrap the worker in `api/analyze.py` (Vercel Python serverless), add a client component on `/dashboard/[id]` that triggers the analysis and polls `router.refresh()` until status changes.
+- **Phase 4**: Results page `/dashboard/<analysis_id>` rendering Plotly chart from `results_json.figure_json` and a summary table from `results_json.summary`. (The route exists today as a placeholder.)
 - **Phase 5**: Delete-an-analysis UI to free a slot when at the 5-cap. Today users have to free a slot via SQL.
 - **Phase 6**: Deploy to Vercel. Configure prod env vars. Update Supabase Auth Redirect URLs with prod domain.
 
-## Setup state checkpoint (as of 2026-05-12 — Phases 1 & 2 fully verified)
+## Setup state checkpoint (as of 2026-05-12 — Phases 1, 2, & 3 fully verified)
 
 | Item | Status |
 |---|---|
@@ -88,22 +124,19 @@ Both phases pass `npx tsc --noEmit` and `npm run lint` clean.
 | .env.local with real credentials | ✅ Populated locally (gitignored). Uses modern `sb_publishable_...` anon key. |
 | Auth flow end-to-end | ✅ Verified in browser: signup → email confirm → login → logout → relogin → forgot-pw → reset |
 | New-analysis flow end-to-end | ✅ Verified in browser: submit form → row inserted as `pending` → CSV in `csvs/<uid>/<id>.csv` (confirmed via MCP SQL on `storage.objects`) → redirect to `/dashboard/[id]` shows the queued placeholder |
+| Worker end-to-end | ✅ `python -m worker.analyze <id>` against the real "Test analysis" row (143 deposits since 2022) completed; `status='completed'`, `results_json` populated (`figure_json` ~45 KB, full summary), SPY cache populated with 8378 rows from 1993. Second run skips yfinance (cache hit). |
 | Vercel account / project | Not yet set up. Deferred to phase 6. |
 
 ## Immediate next steps
 
-Start **Phase 3** (Python serverless `/api/analyze` — the actual analysis worker):
+Wrap the math worker in an HTTP layer + UI polling (informally "Phase 3.5"):
 
-- Add Python serverless function at `api/analyze.py` (or `api/analyze/route.ts` calling a Python child process — TBD by the chosen Vercel pattern).
-- Worker behaviour:
-  1. Receives `{ analysis_id }`. Authenticates via Supabase service_role.
-  2. Reads the row, flips status to `running`.
-  3. Downloads the CSV from `csvs/<user_uid>/<analysis_id>.csv` via service_role.
-  4. Runs the CLI math: parse CSV (`rh_parser.py`), fetch benchmark prices (yfinance, with reads/writes through the `benchmark_price_cache` table — replacing the CLI's parquet cache), compute metrics + Plotly figure.
-  5. Writes `results_json = { figure_json, metrics_per_benchmark }` and `status='completed'`. On failure, sets `status='failed'` and `error_message`.
-- Decide trigger: enqueued by the create action (`fetch('/api/analyze', { body: { analysis_id } })` fire-and-forget), or polled, or pg_net from a trigger. Fire-and-forget from the action is simplest and matches the existing flow.
-- Surface a polling/refresh UI on `/dashboard/[id]` so the user can see status transition without a manual refresh (could be `revalidatePath` on a `setTimeout`, or a client-side `router.refresh()` poll).
-- See the CLI repo for reference logic (`rh_parser.py`, `benchmark.py`, `metrics.py`, `chart.py`).
+- **`api/analyze.py`** (or a Next.js Route Handler at `src/app/api/analyze/route.ts` if we'd rather avoid Python on Vercel for now). Receives `{ analysis_id }`, calls `worker.analyze.main(id)`, returns success/failure.
+- **Client-side trigger on `/dashboard/[id]`**: if `status='pending'`, render a client component that POSTs to the route once on mount, then polls (`router.refresh()` every 3s) until status changes. Robust to tab refreshes — reload mid-analysis just resumes polling.
+- **Idempotency**: before flipping `pending → running`, the worker should reject if status is already `running` or `completed`. Tiny CAS via a Postgres WHERE clause.
+- **Then Phase 4**: replace `/dashboard/[id]`'s placeholder body with the Plotly chart (rehydrate `results_json.figure_json` client-side via `plotly.js-dist-min`) plus the summary table from `results_json.summary`.
+
+The CLI repo (`/Users/aayushipandit/Desktop/Claude-Work/Robinhood portfolio analyser/`) is no longer needed as a source — `worker/` is the working copy now.
 
 ## Companion CLI repo — reuse, don't re-implement
 
@@ -134,6 +167,25 @@ cp .env.local.example .env.local
 npm install   # already done; safe to skip
 npm run dev   # http://localhost:3000
 ```
+
+### Python worker (Phase 3+)
+
+One-time setup:
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r worker/requirements.txt
+```
+
+Run an analysis against an existing `analyses` row:
+```bash
+source .venv/bin/activate   # if not active
+python -m worker.analyze <analysis_id>
+```
+
+The worker reads `.env.local` for `NEXT_PUBLIC_SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY`. Service role bypasses RLS, so the worker can read
+any user's CSV and write back to any analyses row — keep the key off-cluster.
 
 Sanity checks before any commit:
 
@@ -173,6 +225,15 @@ src/
 │       └── proxy.ts               updateSession + route protection
 └── proxy.ts                       Next.js proxy entrypoint (Next.js 16 renamed `middleware` → `proxy`)
 supabase/migrations/               SQL migrations; apply via Dashboard or MCP
+worker/                            Python analysis worker (Phase 3)
+├── __init__.py                    package marker
+├── __main__.py                    enables `python -m worker <id>`
+├── analyze.py                     entry point: row → results_json + status flip
+├── rh_parser.py                   Robinhood CSV → list[CashFlow] (verbatim port)
+├── metrics.py                     XIRR + CAGR (verbatim port)
+├── benchmark.py                   yfinance fetch + deposit-mirrored sim (Postgres-cached)
+├── chart.py                       Plotly figure builder, returns fig.to_json()
+└── requirements.txt               pandas, yfinance, plotly, scipy, supabase, dotenv
 ```
 
 ## Common gotchas

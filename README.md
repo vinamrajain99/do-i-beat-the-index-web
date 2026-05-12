@@ -2,7 +2,7 @@
 
 Web app version of [do-i-beat-the-index](https://github.com/vinamrajain99/do-i-beat-the-index) — the same deposit-mirrored portfolio-vs-benchmark analysis, but with login, persistent saved analyses, and a browser UI.
 
-**Status: under construction.** Phases 1 (auth) and 2 (CSV upload + new-analysis form) are complete; phases 3–5 (analysis pipeline, results UI, delete) are in progress.
+**Status: under construction.** Phases 1 (auth), 2 (CSV upload + new-analysis form), and 3 (Python analysis worker, math-only) are complete; the worker's HTTP wrapper + UI polling, the results UI, and delete are still in progress.
 
 ## Architecture
 
@@ -48,6 +48,27 @@ npm run dev
 
 App is at [http://localhost:3000](http://localhost:3000).
 
+### 5. (Optional) Run the analysis worker locally
+
+The Python worker in `worker/` consumes an `analyses` row id, downloads the
+CSV from Supabase Storage, runs the math, and writes `results_json` +
+`status='completed'` back to the row. The HTTP wrapper for it is not built
+yet — you invoke it from the CLI.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r worker/requirements.txt
+
+# After submitting an analysis in the web UI, grab its id from /dashboard
+# and run:
+python -m worker.analyze <analysis_id>
+```
+
+The worker reads `.env.local` for the Supabase URL + service role key and
+caches benchmark prices in the `benchmark_price_cache` table (one yfinance
+fetch per ticker per day).
+
 ## Project structure
 
 ```
@@ -79,6 +100,14 @@ src/
 └── proxy.ts                     Next.js proxy entrypoint (formerly middleware.ts)
 
 supabase/migrations/             SQL migrations, apply via Dashboard SQL Editor
+
+worker/                          Python analysis worker (Phase 3)
+├── analyze.py                   entry: row → results_json + status
+├── rh_parser.py                 Robinhood CSV → list[CashFlow]
+├── metrics.py                   XIRR + CAGR
+├── benchmark.py                 yfinance + deposit-mirrored sim (Postgres-cached)
+├── chart.py                     Plotly figure builder (returns JSON)
+└── requirements.txt             Python deps
 ```
 
 ## Security notes
@@ -92,10 +121,10 @@ supabase/migrations/             SQL migrations, apply via Dashboard SQL Editor
 
 - [x] Phase 1: Auth (sign up, log in, password reset)
 - [x] Phase 2: New-analysis form + CSV upload to Supabase Storage
-- [ ] Phase 3: Python serverless `/api/analyze` (reuses CLI math)
+- [x] Phase 3: Python analysis worker (math-only, local CLI; HTTP wrapper TBD)
 - [ ] Phase 4: Results page (Plotly chart + summary table)
 - [ ] Phase 5: Delete-an-analysis UI to free a slot
-- [ ] Phase 6: Deploy to Vercel
+- [ ] Phase 6: Deploy to Vercel (Python serverless `/api/analyze` + UI polling)
 
 ## License
 

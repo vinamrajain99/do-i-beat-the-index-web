@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Python worker (Phase 3+) and its venv — not part of the JS toolchain.
+    "worker/**",
+    ".venv/**",
+    "venv/**",
   ]),
 ]);
 
