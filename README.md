@@ -2,7 +2,7 @@
 
 Web app version of [do-i-beat-the-index](https://github.com/vinamrajain99/do-i-beat-the-index) — the same deposit-mirrored portfolio-vs-benchmark analysis, but with login, persistent saved analyses, and a browser UI.
 
-**Status: under construction.** Phase 1 (auth) is complete; phases 2–5 (CSV upload, analysis pipeline, results UI, history) are in progress.
+**Status: under construction.** Phases 1 (auth) and 2 (CSV upload + new-analysis form) are complete; phases 3–5 (analysis pipeline, results UI, delete) are in progress.
 
 ## Architecture
 
@@ -63,7 +63,12 @@ src/
 │   │   ├── reset-password/      page + server action (sets new password)
 │   │   ├── callback/route.ts    exchanges email-link code for session
 │   │   └── sign-out/actions.ts  server action used by Sign out button
-│   └── dashboard/page.tsx       protected; lists user's analyses
+│   └── dashboard/
+│       ├── page.tsx             list of analyses (max 5) + "+ New analysis" CTA
+│       ├── new/
+│       │   ├── page.tsx         form: name, value, benchmark chips, CSV upload
+│       │   └── actions.ts       server action: validate, insert, upload, redirect
+│       └── [id]/page.tsx        results page (Phase 2: pending placeholder)
 ├── components/ui/               shadcn primitives (Button, Input, Label, Card)
 ├── lib/
 │   ├── utils.ts                 cn() helper
@@ -86,10 +91,10 @@ supabase/migrations/             SQL migrations, apply via Dashboard SQL Editor
 ## Roadmap
 
 - [x] Phase 1: Auth (sign up, log in, password reset)
-- [ ] Phase 2: CSV upload to Supabase Storage
+- [x] Phase 2: New-analysis form + CSV upload to Supabase Storage
 - [ ] Phase 3: Python serverless `/api/analyze` (reuses CLI math)
 - [ ] Phase 4: Results page (Plotly chart + summary table)
-- [ ] Phase 5: Saved-analysis history + 5-cap enforcement + delete
+- [ ] Phase 5: Delete-an-analysis UI to free a slot
 - [ ] Phase 6: Deploy to Vercel
 
 ## License

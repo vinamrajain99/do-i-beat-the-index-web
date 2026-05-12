@@ -34,9 +34,11 @@ A "buy-mirroring" alternative was considered and rejected for the CLI; we inheri
 
 User chose: deposit-mirror (the only math), frozen snapshots, separate repo from the CLI.
 
-## What's built (Phase 1 — complete)
+## What's built (Phases 1 & 2 — complete)
 
-**Commit `9b3710a` (and follow-ups):** Auth scaffold. Passes `npx tsc --noEmit` and `npm run lint` clean.
+Both phases pass `npx tsc --noEmit` and `npm run lint` clean.
+
+### Phase 1 — auth scaffold (commit `9b3710a` + follow-ups)
 
 - Next.js scaffold with App Router, src/, Tailwind v4, ESLint
 - shadcn/ui primitives handwritten in `src/components/ui/`: Button, Input, Label, Card
@@ -45,7 +47,6 @@ User chose: deposit-mirror (the only math), frozen snapshots, separate repo from
 - Auth pages in `src/app/auth/`: `login/`, `signup/`, `forgot-password/`, `reset-password/` — each with `page.tsx` + `actions.ts` (server actions using React 19 `useActionState`)
 - `src/app/auth/callback/route.ts` exchanges email-link `?code=...` for a session
 - `src/app/auth/sign-out/actions.ts` server action
-- `src/app/dashboard/page.tsx` protected page (placeholder; analysis list coming phase 5)
 - `src/app/page.tsx` landing page (redirects to /dashboard if signed in)
 - SQL migrations in `supabase/migrations/`:
   - `20260510000000_init_schema.sql` —
@@ -59,15 +60,23 @@ User chose: deposit-mirror (the only math), frozen snapshots, separate repo from
 - LICENSE (MIT), README.md, .gitignore (with negation for `.env.local.example`)
 - `.mcp.json` pointing to Supabase MCP server (HTTP, OAuth)
 
+### Phase 2 — CSV upload + new-analysis form
+
+- `src/lib/types.ts` — shared `Analysis` type, `AnalysisStatus` union, ticker regex, and the `BENCHMARK_DEFAULTS` constant (10 curated tickers).
+- `src/app/dashboard/page.tsx` — real analysis list (RLS-scoped, max 5), status badges, "+ New analysis" CTA with a disabled state at cap.
+- `src/app/dashboard/new/page.tsx` — client form using `useActionState`, chip-style benchmark multiselect (10 defaults + free-form custom tickers), CSV file input.
+- `src/app/dashboard/new/actions.ts` — `createAnalysisAction` server action: validates → inserts `pending` row → uploads CSV to `csvs/<uid>/<id>.csv` → redirects to `/dashboard/[id]`. Catches `analysis_limit_reached` (5-cap trigger) and rolls back the row on storage upload failure.
+- `src/app/dashboard/[id]/page.tsx` — server component placeholder for the results page. Renders status-specific copy. Phase 4 replaces the body with the Plotly chart + summary table.
+- `next.config.ts` — bumps `experimental.serverActions.bodySizeLimit` to `'12mb'` so 10 MB CSVs fit (default is 1 MB).
+
 ## What's NOT built yet
 
-- **Phase 2**: CSV upload UI → Supabase Storage `csvs/<uid>/<analysis_id>.csv`. New analysis form (benchmarks multi-select up to 5, current_value input, CSV file input). DB row inserted with `status='pending'`.
 - **Phase 3**: Python serverless `/api/analyze`. Receives `analysis_id`, fetches CSV from storage using service_role, runs the CLI math (port `rh_parser.py`, `benchmark.py`, `metrics.py` from the CLI repo as needed), writes `results_json` and `status='completed'`. Use `benchmark_price_cache` table to avoid re-fetching from yfinance.
-- **Phase 4**: Results page `/dashboard/<analysis_id>` rendering Plotly chart from `results_json` and a summary table.
-- **Phase 5**: Dashboard analysis list (5 max), delete-to-free-slot UI, friendly error when at cap.
+- **Phase 4**: Results page `/dashboard/<analysis_id>` rendering Plotly chart from `results_json` and a summary table. (The route exists today as a placeholder; this phase just replaces the body.)
+- **Phase 5**: Delete-an-analysis UI to free a slot when at the 5-cap. Today users have to free a slot via SQL.
 - **Phase 6**: Deploy to Vercel. Configure prod env vars. Update Supabase Auth Redirect URLs with prod domain.
 
-## Setup state checkpoint (as of 2026-05-12 — Phase 1 fully verified)
+## Setup state checkpoint (as of 2026-05-12 — Phases 1 & 2 fully verified)
 
 | Item | Status |
 |---|---|
@@ -78,20 +87,23 @@ User chose: deposit-mirror (the only math), frozen snapshots, separate repo from
 | Supabase MCP server | ✅ OAuth + connection verified working |
 | .env.local with real credentials | ✅ Populated locally (gitignored). Uses modern `sb_publishable_...` anon key. |
 | Auth flow end-to-end | ✅ Verified in browser: signup → email confirm → login → logout → relogin → forgot-pw → reset |
+| New-analysis flow end-to-end | ✅ Verified in browser: submit form → row inserted as `pending` → CSV in `csvs/<uid>/<id>.csv` (confirmed via MCP SQL on `storage.objects`) → redirect to `/dashboard/[id]` shows the queued placeholder |
 | Vercel account / project | Not yet set up. Deferred to phase 6. |
 
 ## Immediate next steps
 
-Start **Phase 2** (CSV upload + new-analysis form):
+Start **Phase 3** (Python serverless `/api/analyze` — the actual analysis worker):
 
-- Build the form UI at `/dashboard/new` (or modal on `/dashboard`): name input, benchmarks multi-select capped at 5, `current_value_usd` input, CSV file input (10 MB cap, `.csv` only).
-- Server action on submit:
-  1. Insert `analyses` row with `status='pending'`, capture returned id.
-  2. Upload CSV to `csvs/<user_uid>/<analysis_id>.csv` via supabase-js storage client.
-  3. Update the row's `csv_storage_path` (or store it on the initial insert if we determine the path first).
-  4. Redirect to `/dashboard/<analysis_id>` (results page comes Phase 4).
-- Surface the `analysis_limit_reached` trigger error gracefully if user is at 5.
-- Sanity-check that `auth.uid()` RLS on insert works (must use a server client that carries the user's session — not service_role).
+- Add Python serverless function at `api/analyze.py` (or `api/analyze/route.ts` calling a Python child process — TBD by the chosen Vercel pattern).
+- Worker behaviour:
+  1. Receives `{ analysis_id }`. Authenticates via Supabase service_role.
+  2. Reads the row, flips status to `running`.
+  3. Downloads the CSV from `csvs/<user_uid>/<analysis_id>.csv` via service_role.
+  4. Runs the CLI math: parse CSV (`rh_parser.py`), fetch benchmark prices (yfinance, with reads/writes through the `benchmark_price_cache` table — replacing the CLI's parquet cache), compute metrics + Plotly figure.
+  5. Writes `results_json = { figure_json, metrics_per_benchmark }` and `status='completed'`. On failure, sets `status='failed'` and `error_message`.
+- Decide trigger: enqueued by the create action (`fetch('/api/analyze', { body: { analysis_id } })` fire-and-forget), or polled, or pg_net from a trigger. Fire-and-forget from the action is simplest and matches the existing flow.
+- Surface a polling/refresh UI on `/dashboard/[id]` so the user can see status transition without a manual refresh (could be `revalidatePath` on a `setTimeout`, or a client-side `router.refresh()` poll).
+- See the CLI repo for reference logic (`rh_parser.py`, `benchmark.py`, `metrics.py`, `chart.py`).
 
 ## Companion CLI repo — reuse, don't re-implement
 
@@ -145,10 +157,16 @@ src/
 │   │   ├── reset-password/        page + action (updateUser({password}))
 │   │   ├── callback/route.ts      exchangeCodeForSession on email-link click
 │   │   └── sign-out/actions.ts    signOut + redirect
-│   └── dashboard/page.tsx         protected; placeholder for analysis list
+│   └── dashboard/
+│       ├── page.tsx               list of analyses (max 5) + "+ New analysis" CTA
+│       ├── new/
+│       │   ├── page.tsx           form: name, value, benchmark chips, CSV
+│       │   └── actions.ts         createAnalysisAction (insert + upload + redirect)
+│       └── [id]/page.tsx          per-analysis results (Phase 2: pending placeholder)
 ├── components/ui/                 Button, Input, Label, Card (shadcn primitives)
 ├── lib/
 │   ├── utils.ts                   cn() helper (clsx + tailwind-merge)
+│   ├── types.ts                   Analysis type + BENCHMARK_DEFAULTS + size/cap consts
 │   └── supabase/
 │       ├── client.ts              createBrowserClient
 │       ├── server.ts              createServerClient with cookies()
