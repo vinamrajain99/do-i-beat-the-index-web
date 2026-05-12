@@ -6,6 +6,42 @@ Web app version of a Robinhood portfolio analyser. Multi-user, persisted analyse
 
 **This repo on GitHub:** https://github.com/vinamrajain99/do-i-beat-the-index-web (private during build-out).
 
+## Resume from here (2026-05-12, end of session)
+
+**Where we left off**: Phases 1, 2, and 3 (math-only) are shipped and pushed to `origin/main`. Latest commit on `main`: `c1f8094 Phase 3 (math-only): port CLI analysis worker into worker/`. Working tree clean.
+
+**What works today**, end-to-end:
+- User can sign up, confirm email, log in, log out, reset password.
+- User can submit a new analysis at `/dashboard/new` (name, $value, 1–5 benchmark chips, CSV upload).
+- A `pending` row is written to `public.analyses`, the CSV lives at `csvs/<uid>/<id>.csv`.
+- Running `python -m worker.analyze <id>` against any `pending` row flips it to `completed` with `results_json` populated (Plotly figure JSON + per-benchmark summary).
+- Cache lives in `public.benchmark_price_cache`; subsequent runs against the same ticker skip yfinance.
+
+**Verified completed example row** (handy for re-verifying or for Phase 4 UI work):
+- `id = a00b6396-3d8c-4b5d-9eeb-d4d132a68b1a`
+- Name: "Test analysis", 143 real Robinhood deposits 2022–2026, benchmark `SPY`.
+- Note: current_value was entered as `$1000` (placeholder), so the actual XIRR shows −99.8%. Math is right; input was a typo. Either swap in a realistic current value via SQL update, or submit a new analysis from the UI to get a row with sensible numbers.
+
+**What's NOT built yet** (in priority order):
+1. **Wrap the worker in HTTP + add UI polling** (informally "Phase 3.5"). See the "Immediate next steps" section below for the full breakdown. Until this is done, the worker is invoked manually from the terminal; the user sees "Queued" on `/dashboard/[id]` forever.
+2. **Phase 4** — replace `/dashboard/[id]`'s placeholder body with the actual Plotly chart (rehydrate `results_json.figure_json`) and the summary table (`results_json.summary`).
+3. **Phase 5** — delete-an-analysis UI to free a slot at the 5-cap. Currently freeable only via SQL.
+4. **Phase 6** — Vercel deploy + prod env vars + prod Auth Redirect URLs.
+
+**Session housekeeping on pickup**:
+- The dev server was stopped at the end of the previous session. Restart with `npm run dev`.
+- The Python venv at `.venv/` is set up and gitignored. `source .venv/bin/activate` to use it.
+- `.env.local` exists locally (gitignored) and is populated with the real Supabase credentials — don't regenerate.
+- This branch is `claude/great-lumiere-b3af28`. The pattern in previous sessions was: commit on the branch, then `git push origin claude/great-lumiere-b3af28:main` to fast-forward main. The user's main checkout outside this worktree is two commits behind `origin/main`; a `git pull` from there will FF.
+
+**Sanity check on resume** (in order):
+```bash
+git status                          # should be clean
+git log --oneline -1                # c1f8094 Phase 3 (math-only)...
+npx tsc --noEmit && npm run lint    # both should pass
+source .venv/bin/activate && python -c "from worker.analyze import main; print('worker imports OK')"
+```
+
 ## What this app does
 
 User uploads their Robinhood activity CSV, picks up to 5 benchmark tickers, enters their current portfolio value. App computes a **deposit-mirrored counterfactual** for each benchmark and shows an interactive chart + summary table (XIRR, CAGR, %/$ delta vs. actual). Up to 5 analyses persisted per user.
@@ -129,23 +165,57 @@ python -m worker.analyze <analysis_id>
 
 ## Immediate next steps
 
-Wrap the math worker in an HTTP layer + UI polling (informally "Phase 3.5"):
+The next chunk wraps the math worker in HTTP + UI polling (informally "Phase 3.5"). It's the smallest unit of work that turns a manual `python -m worker.analyze` invocation into the user-facing "submit form → wait → see results" loop. Order suggested:
 
-- **`api/analyze.py`** (or a Next.js Route Handler at `src/app/api/analyze/route.ts` if we'd rather avoid Python on Vercel for now). Receives `{ analysis_id }`, calls `worker.analyze.main(id)`, returns success/failure.
-- **Client-side trigger on `/dashboard/[id]`**: if `status='pending'`, render a client component that POSTs to the route once on mount, then polls (`router.refresh()` every 3s) until status changes. Robust to tab refreshes — reload mid-analysis just resumes polling.
-- **Idempotency**: before flipping `pending → running`, the worker should reject if status is already `running` or `completed`. Tiny CAS via a Postgres WHERE clause.
-- **Then Phase 4**: replace `/dashboard/[id]`'s placeholder body with the Plotly chart (rehydrate `results_json.figure_json` client-side via `plotly.js-dist-min`) plus the summary table from `results_json.summary`.
+### Step 1 — Pick the HTTP runtime
 
-The CLI repo (`/Users/aayushipandit/Desktop/Claude-Work/Robinhood portfolio analyser/`) is no longer needed as a source — `worker/` is the working copy now.
+Two reasonable shapes; user has not committed to one yet. Surface this as an `AskUserQuestion` at the top of the next session:
 
-## Companion CLI repo — reuse, don't re-implement
+- **(A) Vercel Python serverless at `api/analyze.py`** — matches the architecture table at the top of this file. Requires `requirements.txt` at project root (separate from npm's `package.json`), `vercel.json` runtime hint, and `vercel dev` for local fidelity. Bundle size (~160 MB with pandas+scipy+yfinance+plotly) fits the 250 MB Vercel limit. Cold starts ~5–10s.
+- **(B) Next.js Route Handler at `src/app/api/analyze/route.ts`** that spawns the existing Python worker via `child_process.spawn('python', ['-m', 'worker.analyze', id])`. Single deploy, no Python serverless. Brittle on Vercel (Python binary may not be present in the Node serverless image) but works trivially in local dev.
 
-The CLI lives at `/Users/aayushipandit/Desktop/Claude-Work/Robinhood portfolio analyser/`. Files to mine when building Phase 3:
+(A) is the architecturally-honest path. (B) is fine for getting it working locally first if Vercel is being deferred.
 
-- `rh_parser.py` — CSV → `list[CashFlow]`, filters to ACH/WIRE, parses `($500.00)` style negatives. Already tolerant of malformed rows (Python engine + on_bad_lines callable).
-- `benchmark.py` — yfinance fetch with parquet caching, deposit-mirrored simulation. Replace its parquet cache with reads/writes to the Supabase `benchmark_price_cache` table.
-- `metrics.py` — XIRR, CAGR, total return.
-- `chart.py` — Plotly figure construction. The figure can be JSON-serialized via `fig.to_json()` and stored in `results_json`, then rehydrated client-side.
+### Step 2 — Idempotency CAS
+
+Before the worker flips status `pending → running`, it should reject if the row is already `running` or `completed`. Use a conditional update (Postgres returns the updated row, or empty if no match):
+
+```python
+res = sb.table("analyses").update({"status": "running"}) \
+    .eq("id", analysis_id).eq("status", "pending").execute()
+if not res.data:
+    # Someone else already grabbed it, or it's not pending anymore.
+    return 0  # not an error — just nothing to do
+```
+
+This protects against double-trigger from the client (page mount + polling overlap) and from a stuck `running` row being re-triggered.
+
+### Step 3 — Client trigger + poll on `/dashboard/[id]`
+
+Currently `src/app/dashboard/[id]/page.tsx` is a pure server component. Convert it to render a small client component when `status in {'pending', 'running'}`:
+
+- On mount: `fetch('/api/analyze', { method: 'POST', body: JSON.stringify({ analysis_id: id }) })`. Don't await; let it run.
+- Poll `router.refresh()` every ~3s while `status` stays pending/running. Stop polling once the page re-renders with `completed` or `failed`.
+- Failure state: show `error_message` (already on the row) when `status='failed'`.
+
+The page should remain functional with JS off — server-side rendering of the row + status badge is what the current code already does. The client component is layered on top for polling.
+
+### Step 4 — Phase 4 (the chart UI)
+
+Replace `/dashboard/[id]`'s placeholder body when `status='completed'`:
+
+- Install `plotly.js-dist-min` (or `react-plotly.js` for a React wrapper).
+- Client component that takes `results_json.figure_json` (string) and renders the figure: `Plotly.newPlot(div, JSON.parse(figureJson).data, JSON.parse(figureJson).layout)`.
+- Below the chart, render a table from `results_json.summary` (actual row + one row per benchmark, with the Δ-vs-actual columns).
+- Add TypeScript types for `results_json` in `src/lib/types.ts`. Shape is documented at the top of `worker/analyze.py` and in the "Phase 3" section above — keep them in lockstep.
+
+### What was already considered & rejected
+
+- **Bring Vercel deploy (Phase 6) forward to coincide with the HTTP wrapper**: rejected by the user mid-Phase-3 ("Math + worker module only"). Keep deferred unless they change their mind.
+- **Direct browser-to-Supabase upload** in the create action (instead of the server action streaming the CSV): rejected for Phase 2 since 10 MB fits comfortably through Vercel's body limits with `bodySizeLimit: '12mb'`. Don't re-litigate.
+- **Supabase pg_net trigger** instead of client-side polling: rejected for being overkill at this scale.
+
+The CLI repo (`/Users/aayushipandit/Desktop/Claude-Work/Robinhood portfolio analyser/`) is no longer needed as a source — `worker/` is the working copy now. The CLI's `test_sanity.py` is the closest thing to a regression suite if you want to port that too.
 - `test_sanity.py` — four self-checks (parser, XIRR, zero-delta, withdrawal overflow). The zero-delta check is the highest-signal one.
 
 The Δ vs actual sign convention was fixed in CLI commit `fe75c2e` (in chart.py and main.py). Make sure the web port matches: `bm.final_value - actual_final` (not the reverse).
@@ -248,6 +318,8 @@ worker/                            Python analysis worker (Phase 3)
 
 ## Reference
 
-- Original CLI repo + design docs: `/Users/aayushipandit/Desktop/Claude-Work/Robinhood portfolio analyser/CLAUDE.md`
-- Original plan file: `~/.claude/plans/1-csv-export-route-kind-hartmanis.md`
+- Original CLI repo + design docs: `/Users/aayushipandit/Desktop/Claude-Work/Robinhood portfolio analyser/CLAUDE.md`. The CLI's `test_sanity.py` is a useful regression target if you want to port it.
+- Original plan file (for the CLI's deposit-mirror design rationale): `~/.claude/plans/1-csv-export-route-kind-hartmanis.md`
+- Plan file from the last Claude session that built Phases 1–3 (kept for reference; not re-read on resume): `~/.claude/plans/resumed-functional-unicorn.md`
 - User email: vinamrajain99@gmail.com (also the GitHub handle: `vinamrajain99`)
+- Supabase project ref: `vqrbapbmzvqxjexgtxnf` (use with `mcp__supabase__*` tools)
