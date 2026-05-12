@@ -1,9 +1,11 @@
 /**
  * Shared types and constants for the analysis flow.
  *
- * Phase 4 will tighten `results_json` to a real shape (Plotly figure JSON +
- * metrics summary). For Phase 2 it stays as `unknown` since no worker is
- * writing it yet.
+ * `ResultsJson` mirrors the dict the Python worker writes to
+ * `analyses.results_json` — keep it in lockstep with the docstring at the
+ * top of `worker/analyze.py`. Numeric fields can be `null` because the
+ * worker flattens NaN / Inf (e.g. XIRR on a deeply negative portfolio) to
+ * null at serialize time so the JSON is valid.
  */
 
 export const BENCHMARK_DEFAULTS = [
@@ -21,6 +23,30 @@ export const BENCHMARK_DEFAULTS = [
 
 export type AnalysisStatus = "pending" | "running" | "completed" | "failed";
 
+export type MetricsSummary = {
+  total_deposited: number | null;
+  total_withdrawn: number | null;
+  net_invested: number | null;
+  final_value: number | null;
+  dollar_gain: number | null;
+  total_return_pct: number | null;
+  cagr: number | null;
+  xirr: number | null;
+};
+
+export type ResultsJson = {
+  figure_json: string;
+  summary: {
+    actual: MetricsSummary;
+    benchmarks: Record<string, MetricsSummary>;
+    deposits_count: number;
+    withdrawals_count: number;
+    date_range: [string, string];
+    benchmark_ran_out: Record<string, boolean>;
+    as_of: string;
+  };
+};
+
 export type Analysis = {
   id: string;
   user_id: string;
@@ -30,7 +56,7 @@ export type Analysis = {
   csv_storage_path: string;
   status: AnalysisStatus;
   error_message: string | null;
-  results_json: unknown | null;
+  results_json: ResultsJson | null;
   created_at: string;
   completed_at: string | null;
 };

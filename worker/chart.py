@@ -1,9 +1,8 @@
 """Build the comparison Plotly figure as JSON for the web frontend to rehydrate.
 
-Ported from the CLI on 2026-05-12. The only behavioural change is the final
-output: the CLI writes a self-contained HTML file; we return `fig.to_json()`
-so it can be stored on `analyses.results_json` and rendered client-side by
-Plotly.js in Phase 4.
+Single chart only — the metrics table is rendered as native HTML in the
+frontend (`src/app/dashboard/[id]/results-summary.tsx`), not baked into the
+figure.
 """
 
 from __future__ import annotations
@@ -11,69 +10,36 @@ from __future__ import annotations
 from datetime import date
 
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 from worker.benchmark import BenchmarkResult
 from worker.metrics import Metrics
 from worker.rh_parser import CashFlow
 
 
-def _fmt_money(x: float | None) -> str:
-    if x is None:
-        return "—"
-    sign = "-" if x < 0 else ""
-    return f"{sign}${abs(x):,.2f}"
+# Visual tokens ----------------------------------------------------------------
 
+_FONT_FAMILY = (
+    "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "
+    "'Segoe UI', Roboto, sans-serif"
+)
 
-def _fmt_pct(x: float | None) -> str:
-    if x is None:
-        return "—"
-    try:
-        if x != x:  # NaN
-            return "—"
-    except TypeError:
-        return "—"
-    return f"{x * 100:+.2f}%"
+# Tailwind-ish modern palette for benchmark lines. Cycled by index.
+_BENCHMARK_PALETTE = [
+    "#2563eb",  # blue-600
+    "#f59e0b",  # amber-500
+    "#10b981",  # emerald-500
+    "#ec4899",  # pink-500
+    "#8b5cf6",  # violet-500
+]
 
-
-def _summary_rows(
-    actual_metrics: Metrics,
-    benchmark_metrics: dict[str, tuple[BenchmarkResult, Metrics]],
-) -> list[list[str]]:
-    rows: list[list[str]] = []
-    actual_final = actual_metrics.final_value
-    rows.append(
-        [
-            "Actual portfolio",
-            _fmt_money(actual_metrics.final_value),
-            _fmt_money(actual_metrics.dollar_gain),
-            _fmt_pct(actual_metrics.total_return_pct),
-            _fmt_pct(actual_metrics.cagr),
-            _fmt_pct(actual_metrics.xirr),
-            "—",
-            "—",
-        ]
-    )
-    for ticker, (bm, bm_metrics) in benchmark_metrics.items():
-        rows.append(
-            [
-                f"Benchmark: {ticker}" + (" (ran out)" if bm.ran_out else ""),
-                _fmt_money(bm_metrics.final_value),
-                _fmt_money(bm_metrics.dollar_gain),
-                _fmt_pct(bm_metrics.total_return_pct),
-                _fmt_pct(bm_metrics.cagr),
-                _fmt_pct(bm_metrics.xirr),
-                # Δ vs actual = (this benchmark) − (actual). Negative when the
-                # benchmark underperformed; positive when it beat your picks.
-                _fmt_money(bm_metrics.final_value - actual_final),
-                _fmt_pct(
-                    (bm_metrics.final_value / actual_final - 1)
-                    if actual_final > 0
-                    else None
-                ),
-            ]
-        )
-    return rows
+_COLOR_ACTUAL = "#0f172a"            # slate-900
+_COLOR_DEPOSIT = "#16a34a"           # green-600
+_COLOR_DEPOSIT_FILL = "rgba(22,163,74,0.55)"
+_COLOR_WITHDRAWAL = "#dc2626"        # red-600
+_COLOR_WITHDRAWAL_FILL = "rgba(220,38,38,0.55)"
+_COLOR_GRID = "rgba(15,23,42,0.07)"  # slate-900 @ 7%
+_COLOR_AXIS_TEXT = "#475569"         # slate-600
+_COLOR_MUTED = "#94a3b8"             # slate-400
 
 
 def build_figure_json(
@@ -84,45 +50,47 @@ def build_figure_json(
     benchmark_metrics: dict[str, Metrics],
 ) -> str:
     """Return a Plotly figure as a JSON string, ready to drop into `Plotly.newPlot`."""
-    fig = make_subplots(
-        rows=2,
-        cols=1,
-        row_heights=[0.7, 0.3],
-        vertical_spacing=0.08,
-        specs=[[{"type": "scatter"}], [{"type": "table"}]],
-        subplot_titles=("Portfolio value over time", "Summary metrics"),
-    )
+    # `actual_metrics` and `benchmark_metrics` are passed in for parity with
+    # the CLI signature, but the table that consumed them has moved to the
+    # frontend. Keep the parameters so callers don't need to change.
+    del actual_metrics, benchmark_metrics
 
-    palette = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
+    fig = go.Figure()
+
+    # Benchmark lines.
     for i, (ticker, bm) in enumerate(benchmark_results.items()):
+        color = _BENCHMARK_PALETTE[i % len(_BENCHMARK_PALETTE)]
         fig.add_trace(
             go.Scatter(
                 x=list(bm.daily_value.index),
                 y=list(bm.daily_value.values),
                 mode="lines",
-                name=f"Benchmark: {ticker}",
-                line=dict(color=palette[i % len(palette)], width=2),
-                hovertemplate="%{x|%Y-%m-%d}<br>$%{y:,.2f}<extra>"
+                name=ticker,
+                line=dict(color=color, width=2.5),
+                hovertemplate="<b>%{x|%b %d, %Y}</b><br>$%{y:,.0f}<extra>"
                 + ticker
                 + "</extra>",
-            ),
-            row=1,
-            col=1,
+            )
         )
 
+    # Actual portfolio "today" marker.
     fig.add_trace(
         go.Scatter(
             x=[date.today()],
             y=[actual_final_value],
             mode="markers",
-            name="Actual portfolio (today)",
-            marker=dict(color="black", size=16, symbol="star"),
-            hovertemplate="Today<br>$%{y:,.2f}<extra>Actual</extra>",
-        ),
-        row=1,
-        col=1,
+            name="Your portfolio (today)",
+            marker=dict(
+                color=_COLOR_ACTUAL,
+                size=18,
+                symbol="star",
+                line=dict(color="white", width=2),
+            ),
+            hovertemplate="<b>Today</b><br>$%{y:,.0f}<extra>Your portfolio</extra>",
+        )
     )
 
+    # Deposit triangles, sized (gently) by amount.
     deposit_dates = [f.date for f in flows if f.amount > 0]
     deposit_amts = [f.amount for f in flows if f.amount > 0]
     if deposit_dates:
@@ -133,18 +101,17 @@ def build_figure_json(
                 mode="markers",
                 name="Deposits",
                 marker=dict(
-                    color="rgba(50,160,50,0.6)",
-                    size=[max(6, min(22, 6 + (a / 1000))) for a in deposit_amts],
+                    color=_COLOR_DEPOSIT_FILL,
+                    size=[max(5, min(11, 5 + (a / 3000))) for a in deposit_amts],
                     symbol="triangle-up",
-                    line=dict(color="rgba(20,100,20,0.9)", width=1),
+                    line=dict(color=_COLOR_DEPOSIT, width=1),
                 ),
-                hovertemplate="%{x|%Y-%m-%d}<br>Deposit: $%{customdata:,.2f}<extra></extra>",
+                hovertemplate="<b>%{x|%b %d, %Y}</b><br>Deposit: $%{customdata:,.0f}<extra></extra>",
                 customdata=deposit_amts,
-            ),
-            row=1,
-            col=1,
+            )
         )
 
+    # Withdrawal triangles (only shown when there are any).
     withdrawal_dates = [f.date for f in flows if f.amount < 0]
     withdrawal_amts = [-f.amount for f in flows if f.amount < 0]
     if withdrawal_dates:
@@ -155,65 +122,87 @@ def build_figure_json(
                 mode="markers",
                 name="Withdrawals",
                 marker=dict(
-                    color="rgba(200,50,50,0.6)",
-                    size=[
-                        max(6, min(22, 6 + (a / 1000))) for a in withdrawal_amts
-                    ],
+                    color=_COLOR_WITHDRAWAL_FILL,
+                    size=[max(5, min(11, 5 + (a / 3000))) for a in withdrawal_amts],
                     symbol="triangle-down",
-                    line=dict(color="rgba(120,20,20,0.9)", width=1),
+                    line=dict(color=_COLOR_WITHDRAWAL, width=1),
                 ),
-                hovertemplate="%{x|%Y-%m-%d}<br>Withdrawal: $%{customdata:,.2f}<extra></extra>",
+                hovertemplate="<b>%{x|%b %d, %Y}</b><br>Withdrawal: $%{customdata:,.0f}<extra></extra>",
                 customdata=withdrawal_amts,
-            ),
-            row=1,
-            col=1,
+            )
         )
 
-    headers = [
-        "Strategy",
-        "Current value",
-        "Gain ($)",
-        "Total return",
-        "CAGR",
-        "XIRR",
-        "Δ vs actual ($)",
-        "Δ vs actual (%)",
-    ]
-    rows = _summary_rows(
-        actual_metrics,
-        {t: (benchmark_results[t], benchmark_metrics[t]) for t in benchmark_results},
+    # Axes ---------------------------------------------------------------------
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor=_COLOR_GRID,
+        gridwidth=1,
+        zeroline=False,
+        showline=False,
+        ticks="outside",
+        ticklen=4,
+        tickcolor=_COLOR_MUTED,
+        tickfont=dict(family=_FONT_FAMILY, size=12, color=_COLOR_AXIS_TEXT),
     )
-    columns = list(zip(*rows))
-
-    fig.add_trace(
-        go.Table(
-            header=dict(
-                values=headers,
-                fill_color="#1f2937",
-                font=dict(color="white", size=12),
-                align="left",
-            ),
-            cells=dict(
-                values=[list(col) for col in columns],
-                fill_color="#f9fafb",
-                align="left",
-                font=dict(size=11),
-                height=26,
-            ),
-        ),
-        row=2,
-        col=1,
-    )
-
-    fig.update_xaxes(title_text="Date", row=1, col=1)
     fig.update_yaxes(
-        title_text="Portfolio value ($)", row=1, col=1, tickformat="$,.0f"
+        title=dict(
+            text="Portfolio value",
+            font=dict(family=_FONT_FAMILY, size=13, color=_COLOR_AXIS_TEXT),
+            standoff=12,
+        ),
+        showgrid=True,
+        gridcolor=_COLOR_GRID,
+        gridwidth=1,
+        zeroline=True,
+        zerolinecolor=_COLOR_GRID,
+        zerolinewidth=1,
+        showline=False,
+        ticks="outside",
+        ticklen=4,
+        tickcolor=_COLOR_MUTED,
+        tickfont=dict(family=_FONT_FAMILY, size=12, color=_COLOR_AXIS_TEXT),
+        tickprefix="$",
+        tickformat="~s",   # SI suffix (k, M) with trailing zeros trimmed
+        separatethousands=True,
     )
+
+    # Title --------------------------------------------------------------------
+    today_pretty = date.today().strftime("%B %-d, %Y")
     fig.update_layout(
-        title=f"Robinhood actual vs. benchmark (as of {date.today().isoformat()})",
-        height=900,
+        title=dict(
+            text=(
+                "<b style='font-size:18px;color:#0f172a'>Portfolio vs. benchmark over time</b>"
+                f"<br><span style='font-size:12px;color:#64748b;font-weight:400'>As of {today_pretty}</span>"
+            ),
+            x=0.0,
+            xanchor="left",
+            y=0.96,
+            yanchor="top",
+            pad=dict(l=8, t=4),
+        ),
+        height=600,
+        font=dict(family=_FONT_FAMILY, color=_COLOR_AXIS_TEXT),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
         hovermode="x unified",
-        legend=dict(orientation="h", y=-0.05),
+        hoverlabel=dict(
+            bgcolor="white",
+            bordercolor=_COLOR_GRID,
+            font=dict(family=_FONT_FAMILY, size=12, color="#0f172a"),
+            namelength=-1,
+        ),
+        legend=dict(
+            orientation="h",
+            x=0.5,
+            xanchor="center",
+            y=-0.14,
+            yanchor="top",
+            bgcolor="rgba(0,0,0,0)",
+            bordercolor="rgba(0,0,0,0)",
+            font=dict(family=_FONT_FAMILY, size=12, color=_COLOR_AXIS_TEXT),
+            itemsizing="constant",
+        ),
+        margin=dict(l=60, r=24, t=88, b=72),
     )
 
     return fig.to_json()

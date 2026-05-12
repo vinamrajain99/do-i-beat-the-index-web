@@ -12,6 +12,9 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/server";
 import type { Analysis, AnalysisStatus } from "@/lib/types";
 import { AnalysisRunner } from "./analysis-runner";
+import { PlotlyChart } from "./plotly-chart";
+import { ResultsSummary } from "./results-summary";
+import { DeleteButton } from "../delete-button";
 
 const STATUS_LABEL: Record<AnalysisStatus, string> = {
   pending: "Queued",
@@ -74,15 +77,15 @@ export default async function AnalysisDetailPage({
   const statusClasses = STATUS_CLASSES[analysis.status];
 
   return (
-    <main className="flex-1 flex flex-col px-6 py-8 gap-6 max-w-3xl mx-auto w-full">
+    <main className="flex-1 flex flex-col px-6 py-8 gap-6 max-w-7xl mx-auto w-full">
       <Link
         href="/dashboard"
-        className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline self-start"
+        className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline self-start max-w-3xl w-full mx-auto"
       >
         ← Back to dashboard
       </Link>
 
-      <header className="flex items-start justify-between gap-4">
+      <header className="flex items-start justify-between gap-4 max-w-3xl w-full mx-auto">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight break-words">
             {analysis.name}
@@ -101,7 +104,7 @@ export default async function AnalysisDetailPage({
         </span>
       </header>
 
-      <Card>
+      <Card className="max-w-3xl w-full mx-auto">
         <CardHeader>
           <CardTitle className="text-base">Submission</CardTitle>
           <CardDescription>What you entered for this analysis.</CardDescription>
@@ -125,7 +128,7 @@ export default async function AnalysisDetailPage({
       </Card>
 
       {analysis.status === "pending" || analysis.status === "running" ? (
-        <Card>
+        <Card className="max-w-3xl w-full mx-auto">
           <CardHeader>
             <CardTitle className="text-base">
               {analysis.status === "pending" ? "Queued" : "Running"}
@@ -145,7 +148,7 @@ export default async function AnalysisDetailPage({
           </CardContent>
         </Card>
       ) : analysis.status === "failed" ? (
-        <Card>
+        <Card className="max-w-3xl w-full mx-auto">
           <CardHeader>
             <CardTitle className="text-base">Analysis failed</CardTitle>
             <CardDescription>
@@ -154,19 +157,34 @@ export default async function AnalysisDetailPage({
             </CardDescription>
           </CardHeader>
         </Card>
+      ) : analysis.results_json ? (
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle className="text-base">Results</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <PlotlyChart figureJson={analysis.results_json.figure_json} />
+            <ResultsSummary results={analysis.results_json} />
+          </CardContent>
+        </Card>
       ) : (
-        <Card>
+        <Card className="max-w-3xl w-full mx-auto">
           <CardHeader>
             <CardTitle className="text-base">Results</CardTitle>
             <CardDescription>
-              Results rendering is part of Phase 4. The raw results are saved
-              on this row; the chart UI is coming next.
+              Analysis completed but no results were recorded. This row may
+              need to be re-run.
             </CardDescription>
           </CardHeader>
         </Card>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3 max-w-3xl w-full mx-auto">
+        <DeleteButton
+          analysisId={analysis.id}
+          analysisName={analysis.name}
+          size="default"
+        />
         <Button asChild variant="outline">
           <Link href="/dashboard">Back to dashboard</Link>
         </Button>

@@ -5,7 +5,6 @@ import { signOutAction } from "@/app/auth/sign-out/actions";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -15,6 +14,7 @@ import {
   MAX_ANALYSES_PER_USER,
   type AnalysisStatus,
 } from "@/lib/types";
+import { DeleteButton } from "./delete-button";
 
 type AnalysisListRow = {
   id: string;
@@ -112,31 +112,36 @@ export default async function DashboardPage() {
       ) : (
         <ul className="flex flex-col gap-3">
           {list.map((a) => (
-            <li key={a.id}>
+            <li
+              key={a.id}
+              className="flex items-center rounded-lg border bg-card text-card-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
               <Link
                 href={`/dashboard/${a.id}`}
-                className="block rounded-lg border bg-card text-card-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                className="flex-1 flex items-center justify-between gap-4 min-w-0 py-4 pl-6 pr-2"
               >
-                <Card className="border-0 shadow-none bg-transparent">
-                  <CardContent className="flex items-center justify-between gap-4 py-4">
-                    <div className="min-w-0">
-                      <p className="font-medium truncate">{a.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                        {a.benchmark_tickers.join(", ")} ·{" "}
-                        {formatDate(a.created_at)}
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        "inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium",
-                        STATUS_CLASSES[a.status],
-                      )}
-                    >
-                      {STATUS_LABEL[a.status]}
-                    </span>
-                  </CardContent>
-                </Card>
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{a.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                    {a.benchmark_tickers.join(", ")} ·{" "}
+                    {formatDate(a.created_at)}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium",
+                    STATUS_CLASSES[a.status],
+                  )}
+                >
+                  {STATUS_LABEL[a.status]}
+                </span>
               </Link>
+              <div className="shrink-0 pr-4 pl-2">
+                <DeleteButton
+                  analysisId={a.id}
+                  analysisName={a.name}
+                />
+              </div>
             </li>
           ))}
         </ul>
@@ -144,8 +149,8 @@ export default async function DashboardPage() {
 
       {atCap && (
         <p className="text-xs text-muted-foreground">
-          You&apos;re at the {MAX_ANALYSES_PER_USER}-analysis cap. Delete UI is
-          coming in a later phase; for now you can free a slot via SQL.
+          You&apos;re at the {MAX_ANALYSES_PER_USER}-analysis cap. Delete one
+          above to free a slot for a new analysis.
         </p>
       )}
     </main>
