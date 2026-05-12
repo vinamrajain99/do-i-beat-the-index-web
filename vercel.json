@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/analyze.py": {
-      "maxDuration": 300,
+      "maxDuration": 60,
       "memory": 1024
     }
   }
