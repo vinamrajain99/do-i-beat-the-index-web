@@ -1,36 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# do-i-beat-the-index-web
 
-## Getting Started
+Web app version of [do-i-beat-the-index](https://github.com/vinamrajain99/do-i-beat-the-index) — the same deposit-mirrored portfolio-vs-benchmark analysis, but with login, persistent saved analyses, and a browser UI.
 
-First, run the development server:
+**Status: under construction.** Phase 1 (auth) is complete; phases 2–5 (CSV upload, analysis pipeline, results UI, history) are in progress.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Architecture
+
+- **Frontend**: Next.js 16 App Router + React 19 + TypeScript + Tailwind v4 + shadcn/ui, deployed on **Vercel**
+- **Backend compute**: Python serverless functions in the same Vercel deployment (reuses the CLI's tested math)
+- **Auth + DB + Storage**: **Supabase**
+  - Auth: email/password with email confirmation and password-reset links
+  - Postgres: `analyses` table (max 5 per user, enforced by trigger + RLS)
+  - Storage: private `csvs/` bucket, per-user folder isolation
+
+## Local development
+
+### 1. Create a Supabase project
+
+[supabase.com](https://supabase.com) → New project. Save the database password somewhere safe.
+
+Once it's up, go to **Project Settings → API** and copy the three credentials below into a new `.env.local` file in this directory (start from `.env.local.example`):
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Apply the database schema
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Open **SQL Editor** in the Supabase dashboard, paste the contents of `supabase/migrations/20260510000000_init_schema.sql`, and click **Run**. This creates the `analyses` table, RLS policies, the 5-analysis-per-user trigger, the `csvs` storage bucket, and the benchmark price cache table.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Configure Supabase Auth
 
-## Learn More
+In the Supabase dashboard:
 
-To learn more about Next.js, take a look at the following resources:
+- **Auth → URL Configuration**: set **Site URL** to `http://localhost:3000` (later: your Vercel URL). Add `http://localhost:3000/auth/callback` to **Redirect URLs**.
+- **Auth → Providers → Email**: enable, and turn on "Confirm email" (default).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 4. Install and run
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm install
+npm run dev
+```
 
-## Deploy on Vercel
+App is at [http://localhost:3000](http://localhost:3000).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Project structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+├── app/
+│   ├── layout.tsx               root layout, fonts, Toaster
+│   ├── page.tsx                 landing page (redirects to /dashboard if signed in)
+│   ├── auth/
+│   │   ├── layout.tsx           centered card layout for all auth pages
+│   │   ├── login/               page + server action
+│   │   ├── signup/              page + server action (sends confirmation email)
+│   │   ├── forgot-password/     page + server action (sends reset email)
+│   │   ├── reset-password/      page + server action (sets new password)
+│   │   ├── callback/route.ts    exchanges email-link code for session
+│   │   └── sign-out/actions.ts  server action used by Sign out button
+│   └── dashboard/page.tsx       protected; lists user's analyses
+├── components/ui/               shadcn primitives (Button, Input, Label, Card)
+├── lib/
+│   ├── utils.ts                 cn() helper
+│   └── supabase/
+│       ├── client.ts            createBrowserClient for client components
+│       ├── server.ts            createServerClient for RSC / Server Actions
+│       └── middleware.ts        token refresh + route protection logic
+└── middleware.ts                Next.js middleware entrypoint
+
+supabase/migrations/             SQL migrations, apply via Dashboard SQL Editor
+```
+
+## Security notes
+
+- `getUser()` validates the JWT against Supabase on every request; `getSession()` is **not** used for auth decisions (it reads from cookies without verification).
+- All public tables have RLS enabled; service role key is server-only and never sent to the browser.
+- The 5-analysis cap is enforced both in the UI and via a Postgres trigger (defense in depth).
+- CSVs are uploaded to a private bucket with per-user folder isolation; users can only read/write paths under `<their-uid>/...`.
+
+## Roadmap
+
+- [x] Phase 1: Auth (sign up, log in, password reset)
+- [ ] Phase 2: CSV upload to Supabase Storage
+- [ ] Phase 3: Python serverless `/api/analyze` (reuses CLI math)
+- [ ] Phase 4: Results page (Plotly chart + summary table)
+- [ ] Phase 5: Saved-analysis history + 5-cap enforcement + delete
+- [ ] Phase 6: Deploy to Vercel
+
+## License
+
+MIT. See [LICENSE](LICENSE).
