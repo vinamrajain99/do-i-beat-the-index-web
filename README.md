@@ -36,7 +36,7 @@ Open **SQL Editor** in the Supabase dashboard, paste the contents of `supabase/m
 
 In the Supabase dashboard:
 
-- **Auth → URL Configuration**: set **Site URL** to `http://localhost:3000` (later: your Vercel URL). Add `http://localhost:3000/auth/callback` to **Redirect URLs**.
+- **Auth → URL Configuration**: set **Site URL** to `http://localhost:3000` (later: your Vercel URL). Add `http://localhost:3000/auth/callback` and `http://localhost:3000/auth/reset-password` to **Redirect URLs**.
 - **Auth → Providers → Email**: enable, and turn on "Confirm email" (default).
 
 ### 4. Install and run
@@ -70,8 +70,8 @@ src/
 │   └── supabase/
 │       ├── client.ts            createBrowserClient for client components
 │       ├── server.ts            createServerClient for RSC / Server Actions
-│       └── middleware.ts        token refresh + route protection logic
-└── middleware.ts                Next.js middleware entrypoint
+│       └── proxy.ts             token refresh + route protection logic
+└── proxy.ts                     Next.js proxy entrypoint (formerly middleware.ts)
 
 supabase/migrations/             SQL migrations, apply via Dashboard SQL Editor
 ```

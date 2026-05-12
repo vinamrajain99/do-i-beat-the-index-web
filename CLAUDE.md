@@ -40,18 +40,21 @@ User chose: deposit-mirror (the only math), frozen snapshots, separate repo from
 
 - Next.js scaffold with App Router, src/, Tailwind v4, ESLint
 - shadcn/ui primitives handwritten in `src/components/ui/`: Button, Input, Label, Card
-- Supabase clients in `src/lib/supabase/`: `client.ts` (browser), `server.ts` (RSC/actions), `middleware.ts` (token refresh + route protection)
-- Next.js middleware at `src/middleware.ts` wires the protection logic
+- Supabase clients in `src/lib/supabase/`: `client.ts` (browser), `server.ts` (RSC/actions), `proxy.ts` (token refresh + route protection — formerly `middleware.ts`)
+- Next.js proxy at `src/proxy.ts` wires the protection logic (Next.js 16 renamed `middleware` → `proxy`)
 - Auth pages in `src/app/auth/`: `login/`, `signup/`, `forgot-password/`, `reset-password/` — each with `page.tsx` + `actions.ts` (server actions using React 19 `useActionState`)
 - `src/app/auth/callback/route.ts` exchanges email-link `?code=...` for a session
 - `src/app/auth/sign-out/actions.ts` server action
 - `src/app/dashboard/page.tsx` protected page (placeholder; analysis list coming phase 5)
 - `src/app/page.tsx` landing page (redirects to /dashboard if signed in)
-- SQL migration `supabase/migrations/20260510000000_init_schema.sql`:
-  - `public.analyses` table (RLS scoped to `auth.uid()`, 4 policies)
-  - 5-row-per-user trigger `public.enforce_analysis_limit()`
-  - `csvs` storage bucket with per-user folder RLS
-  - `public.benchmark_price_cache` table (service_role writes, authenticated reads)
+- SQL migrations in `supabase/migrations/`:
+  - `20260510000000_init_schema.sql` —
+    - `public.analyses` table (RLS scoped to `auth.uid()`, 4 policies)
+    - 5-row-per-user trigger `public.enforce_analysis_limit()`
+    - `csvs` storage bucket with per-user folder RLS
+    - `public.benchmark_price_cache` table (service_role writes, authenticated reads)
+  - `20260512162335_revoke_enforce_analysis_limit_execute.sql` —
+    revokes EXECUTE on the trigger function from `public, anon, authenticated` so it can't be invoked via PostgREST RPC (fixes Supabase linter lints 0028/0029)
 - `.env.local.example` documents the four env vars
 - LICENSE (MIT), README.md, .gitignore (with negation for `.env.local.example`)
 - `.mcp.json` pointing to Supabase MCP server (HTTP, OAuth)
@@ -64,26 +67,31 @@ User chose: deposit-mirror (the only math), frozen snapshots, separate repo from
 - **Phase 5**: Dashboard analysis list (5 max), delete-to-free-slot UI, friendly error when at cap.
 - **Phase 6**: Deploy to Vercel. Configure prod env vars. Update Supabase Auth Redirect URLs with prod domain.
 
-## Setup state checkpoint (as of last session)
+## Setup state checkpoint (as of 2026-05-12 — Phase 1 fully verified)
 
 | Item | Status |
 |---|---|
-| GitHub repo (private) | Created and pushed to `vinamrajain99/do-i-beat-the-index-web` |
-| Supabase project | **Created by user** (project name: `do-i-beat-the-index`). Region/ref not yet shared with Claude. |
-| Schema migration applied to Supabase | **NOT YET**. SQL is in `supabase/migrations/20260510000000_init_schema.sql`; needs to be run in the project. |
-| Supabase Auth URL config | **NOT YET DONE**. User must set Site URL = `http://localhost:3000` and add `http://localhost:3000/auth/callback` to Redirect URLs. |
-| Supabase MCP server | OAuth completed in user's terminal session. Need to verify tools are visible after Claude Code session restart. |
-| .env.local with real credentials | **NOT YET CREATED**. User has not pasted the three keys (NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY). |
+| GitHub repo (private) | Pushed to `vinamrajain99/do-i-beat-the-index-web` |
+| Supabase project | `do-i-beat-the-index`, ref `vqrbapbmzvqxjexgtxnf`, region `us-east-2`, `ACTIVE_HEALTHY` |
+| Schema migrations applied to Supabase | ✅ Both migrations applied via MCP. Verified: 2 tables, all 4 RLS policies on `analyses`, csvs bucket + 4 storage policies, trigger in place. Security advisors: 0 lints. |
+| Supabase Auth URL config | ✅ Site URL + Redirect URLs (callback + reset-password) configured |
+| Supabase MCP server | ✅ OAuth + connection verified working |
+| .env.local with real credentials | ✅ Populated locally (gitignored). Uses modern `sb_publishable_...` anon key. |
+| Auth flow end-to-end | ✅ Verified in browser: signup → email confirm → login → logout → relogin → forgot-pw → reset |
 | Vercel account / project | Not yet set up. Deferred to phase 6. |
 
-## Immediate next steps (for the resumed session)
+## Immediate next steps
 
-1. **Verify Supabase MCP tools are visible** (look for `mcp__supabase__*` tools).
-2. **Apply the schema migration** to the user's Supabase project via the MCP (or fall back to manual paste into the Dashboard SQL Editor if MCP is unavailable). The file is at `supabase/migrations/20260510000000_init_schema.sql`.
-3. **Configure Supabase Auth URLs** (Site URL + Redirect URLs) — can also be done via MCP if supported, otherwise direct user to the Dashboard.
-4. **Get the user's Supabase credentials** (URL, anon key, service_role key) and either help them write `.env.local` or have them do it themselves.
-5. **Run the dev server and verify auth flow end-to-end**: signup → email confirm → log in → dashboard → sign out → log back in → forgot password → reset.
-6. Once verified, start **Phase 2** (CSV upload).
+Start **Phase 2** (CSV upload + new-analysis form):
+
+- Build the form UI at `/dashboard/new` (or modal on `/dashboard`): name input, benchmarks multi-select capped at 5, `current_value_usd` input, CSV file input (10 MB cap, `.csv` only).
+- Server action on submit:
+  1. Insert `analyses` row with `status='pending'`, capture returned id.
+  2. Upload CSV to `csvs/<user_uid>/<analysis_id>.csv` via supabase-js storage client.
+  3. Update the row's `csv_storage_path` (or store it on the initial insert if we determine the path first).
+  4. Redirect to `/dashboard/<analysis_id>` (results page comes Phase 4).
+- Surface the `analysis_limit_reached` trigger error gracefully if user is at 5.
+- Sanity-check that `auth.uid()` RLS on insert works (must use a server client that carries the user's session — not service_role).
 
 ## Companion CLI repo — reuse, don't re-implement
 
@@ -99,7 +107,7 @@ The Δ vs actual sign convention was fixed in CLI commit `fe75c2e` (in chart.py 
 
 ## Critical non-obvious decisions
 
-- **`getUser()` not `getSession()` for auth decisions.** `getSession()` reads cookies without verifying the JWT against Supabase — unsafe. Middleware uses `getUser()`.
+- **`getUser()` not `getSession()` for auth decisions.** `getSession()` reads cookies without verifying the JWT against Supabase — unsafe. The proxy uses `getUser()`.
 - **`NEXT_PUBLIC_` prefix means browser-exposed.** Never prefix the service_role key. `SUPABASE_SERVICE_ROLE_KEY` is server-only.
 - **5-analysis cap enforced server-side too** via the Postgres trigger `enforce_analysis_limit`. UI enforcement alone is not enough — the trigger is defense in depth and raises `analysis_limit_reached`. Surface that gracefully in the UI.
 - **Storage path convention**: `csvs/<user_uid>/<analysis_id>.csv`. The RLS policy on `storage.objects` uses `(storage.foldername(name))[1] = auth.uid()::text` to enforce per-user isolation.
@@ -144,8 +152,8 @@ src/
 │   └── supabase/
 │       ├── client.ts              createBrowserClient
 │       ├── server.ts              createServerClient with cookies()
-│       └── middleware.ts          updateSession + route protection
-└── middleware.ts                  Next.js middleware entrypoint
+│       └── proxy.ts               updateSession + route protection
+└── proxy.ts                       Next.js proxy entrypoint (Next.js 16 renamed `middleware` → `proxy`)
 supabase/migrations/               SQL migrations; apply via Dashboard or MCP
 ```
 
@@ -157,6 +165,7 @@ supabase/migrations/               SQL migrations; apply via Dashboard or MCP
 - **`useActionState` is React 19**, not React 18's `useFormState`. Imports differ.
 - **`cookies()` is async in Next.js 16+** — must `await cookies()`.
 - **MCP connections are per-session.** Restart Claude Code in this directory to pick up `.mcp.json`. OAuth tokens persist; only the connection initialization is per-session.
+- **Next.js 16 renamed `middleware` → `proxy`.** The convention file is `src/proxy.ts`, the exported function is `proxy`. Anything you remember as `middleware` is the old name. There's a codemod (`npx @next/codemod@canary middleware-to-proxy .`) if you ever need to redo this on another branch.
 
 ## Reference
 
