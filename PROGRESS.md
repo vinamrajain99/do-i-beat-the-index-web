@@ -74,3 +74,64 @@ Started 2026-05-12. Earlier same-day work (Phases 1, 2, 3 math-only) is in commi
 **Next session should pick up**
 
 **Phase 6 — Vercel deploy**. The repo is deploy-ready: `vercel.json` + root `requirements.txt` + `api/analyze.py` are in place. Open question: confirm the Vercel plan supports `maxDuration: 300` or downgrade to `60`. Full breakdown in TODO.md → Now.
+
+## Session 2026-05-13 — Phase 6 (Vercel deploy)
+
+**Shipped**
+
+- **`vercel.json` `maxDuration` 300 → 60** (commit `566054c`). User chose the free Hobby tier over Pro; typical worker runs are well under 60s when the benchmark cache is warm. Cold first-runs on a long-history ticker might still hit the cap and need a retry, but that's an acceptable tradeoff for $0/mo. See DECISIONS.md (2026-05-13 — Vercel Hobby tier) for the full rationale.
+- **Vercel project created**, GitHub-integration-based, production branch = `main`. Live at **https://do-i-beat-the-index-web.vercel.app**. Project name auto-derived from the repo name.
+- **Production env vars set on Vercel**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (legacy HS256-issued anon, matches local dev), `SUPABASE_SERVICE_ROLE_KEY` (marked **Sensitive**), `NEXT_PUBLIC_SITE_URL=https://do-i-beat-the-index-web.vercel.app`. `SUPABASE_JWT_SECRET` left blank — asymmetric JWT path uses JWKS, no shared secret needed.
+- **First build failed**: `useSearchParams()` in [src/app/auth/login/page.tsx](src/app/auth/login/page.tsx) needed a Suspense boundary for static prerender (Next.js skips prerender in `next dev`, so this only surfaced on the prod build). **Fix** (commit `99287e2`): split the page into three components — `LoginPage` (Suspense wrapper with a fallback that defaults `next="/dashboard"`), `LoginFormWithSearchParams` (reads the `next` query param), and `LoginForm` (the pure form rendering). One-shot fix; redeployed cleanly.
+- **Supabase Auth URL Configuration** updated: Site URL = prod URL. Redirect URLs now include both `localhost:3000` (for ongoing local dev) and prod variants for `/auth/callback` + `/auth/reset-password`. Discovered Supabase's exact-match allowlist still routes to `redirect_to` even when token validation fails — the error info is appended to the URL hash fragment (`#error=access_denied&error_code=otp_expired&...`), and our callback handles a missing `?code` by redirecting to `/auth/login?error=auth_code_invalid`. Hash survives that redirect, which is how we got the long ugly URL during early testing. Wildcard `…/auth/**` entries are unnecessary but added to TODO.md → Later as a hardening option.
+- **Security audit** of the service_role key — checked all tracked files, git history (all branches), all `.md` files, and `NEXT_PUBLIC_*` prefixes. Key value never appeared in any commit on any branch and is not in any tracked file. Only the variable name is referenced (in 4 places: 2 code reads via `os.environ.get` + 2 docs/template mentions in CLAUDE.md). Confirmed `.gitignore` line 34 (`.env*`) excludes `.env.local`. Marked the var as Sensitive in Vercel.
+- **Full E2E smoke test passed in prod**: signup → confirmation email (prod URL) → callback redirect to `/dashboard` → submit analysis (SPY benchmark) → status flipped Queued → Running → Completed within ~30s → chart + summary table rendered → delete from detail page → row gone, CSV gone from Supabase Storage. Then password reset flow: forgot-password → email arrived → reset-password page → new password set → auto-signed-in → manual logout and re-login with new password worked.
+
+**Stumbles worth noting**
+
+- **Email rate limit blocked initial smoke test.** Supabase's built-in SMTP allows ~2 emails/hour project-wide on the free tier. After multiple test-signup + forgot-password attempts during config debugging, hit `over_email_send_rate_limit` (429) silently. The forgot-password action ([src/app/auth/forgot-password/actions.ts](src/app/auth/forgot-password/actions.ts)) returns `{success: true}` regardless of SMTP outcome (a deliberate security choice to avoid account enumeration) — so the UI shows "Check your email" while emails are silently dropped. Diagnosed via Supabase MCP `get_logs` → auth service. Waited ~60min; window slid; flow worked. **Flagged as Phase 7 in TODO.md**: swap to Resend (or similar) custom SMTP. Build-in is unusable for real traffic.
+- **Misdiagnosed the password-reset "redirects to homepage" symptom.** Initial theory: Supabase redirect URL allowlist rejecting query strings in `redirect_to` and falling back to Site URL. After getting the actual URL the user landed on, the truth was different: Supabase did route to our callback correctly; the token was just expired (single-use, already burned by earlier click). The hash fragment from Supabase's verify endpoint preserves through the callback's redirect to `/auth/login`. Lesson recorded inline in PROGRESS — Supabase's allowlist matching is more permissive than I assumed; exact-match entries do accept appended query strings.
+- **Harness blocked direct pushes to `main` repeatedly.** Even with the user's general assent to "do this yourself," each push to `origin/main` required a fresh, explicit per-push authorization from the user this session. Pattern: I commit + push as a single command; the harness denies; user types "yes, commit and push to origin/main"; second attempt succeeds. Recorded so future sessions know not to expect blanket authorization for default-branch pushes.
+
+**In progress**
+
+- _Nothing._ Phase 6 fully shipped, end-to-end verified in prod, all changes on `origin/main` through commit `99287e2`.
+
+**Blocked**
+
+- _Nothing currently blocked._
+
+**Next session should pick up**
+
+**Phase 7 — Custom SMTP** (Resend or equivalent). Required to make the app usable for any real traffic — current built-in SMTP throttles at 2 emails/hour project-wide. No code changes needed; the work is entirely in the Resend dashboard + Supabase Auth → SMTP Settings. Full breakdown in TODO.md → Now.
+
+## Session 2026-05-13 (cont.) — Phase 7 (Custom SMTP via Resend)
+
+**Shipped**
+
+- **Resend account created** via GitHub OAuth (`vinamrajain99`), free tier (3000/mo, 100/day, no credit card).
+- **API key created** in Resend with **Sending access** scope only (not Full access — Supabase doesn't need read/management permissions). Key starts `re_...`, stored only in Supabase Auth → SMTP Settings password field.
+- **Supabase Auth → SMTP Settings** wired to Resend: Host `smtp.resend.com`, Port `587`, Username `resend`, Password = Resend API key, Sender email `onboarding@resend.dev` (Resend's shared sender), Sender name "Do I beat the index?". Custom SMTP toggle enabled.
+- **Smoke test passed end-to-end in prod**: forgot-password from incognito → "Check your email" → email arrived in **spam folder** within ~30s → reset link works → new password set → login with new password works. The 2-emails/hour built-in cap is gone (Resend ceiling is 100/day, ~50× headroom for any realistic traffic).
+- **Tracking files updated for both Phase 6 and Phase 7 closure**:
+  - [TODO.md](TODO.md) — "Now" emptied (all phases shipped); Phase 7 moved to Done; custom-sender-domain + SMTP-failure-logging surfaced as new "Later" entries
+  - [README.md](README.md) — status banner now reflects Phases 1–7; roadmap checkboxes updated
+  - [DECISIONS.md](DECISIONS.md) — captured the Hobby-tier maxDuration tradeoff and the deferred-to-Phase-7 SMTP decision during the earlier mid-session /save-progress
+  - [PROGRESS.md](PROGRESS.md) — this entry
+
+**Stumbles worth noting**
+
+- **SMTP Settings location moved in Supabase UI.** First instruction set sent the user to "Project Settings → Authentication → SMTP Settings"; they couldn't find it. The current location appears to be reachable via several paths (Authentication sub-pages or the main Auth settings page). User found it on their own after I gave alternate paths to try; future sessions should expect this UI to keep shifting.
+- **No "Send test email" button** in the Supabase SMTP UI version on this project. Tested via real forgot-password instead.
+
+**In progress**
+
+- _Nothing._ Phases 1–7 all shipped. The app is fully deployed, email-capable, and usable for any real-traffic load that doesn't exceed Resend's 100/day cap.
+
+**Blocked**
+
+- _Nothing._
+
+**Next session should pick up**
+
+No active phase. The build is fundamentally done. When ready for polish, the natural next item is **custom-sender-domain DNS setup** in Resend (5 min of DNS work — SPF, DKIM, DMARC records added to a domain you own). This removes the spam-folder hit from the current `onboarding@resend.dev` shared sender and is the only remaining gap before sharing the app with real users. Other low-priority items in TODO.md → Later (test_sanity port, stuck-running cron, delete-confirm Dialog, etc.) can be picked in any order.

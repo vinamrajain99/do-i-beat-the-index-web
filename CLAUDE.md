@@ -6,6 +6,7 @@ Web app version of a Robinhood portfolio analyser. Multi-user, persisted analyse
 
 - **CLI companion** (source of the math): `/Users/aayushipandit/Desktop/Claude-Work/Robinhood portfolio analyser/`, public at https://github.com/vinamrajain99/do-i-beat-the-index (MIT).
 - **This repo on GitHub:** https://github.com/vinamrajain99/do-i-beat-the-index-web (private during build-out).
+- **Production deploy:** https://do-i-beat-the-index-web.vercel.app — Vercel Hobby tier, builds from `main`. Phases 1–6 shipped.
 
 ## Session handoff state
 
@@ -52,6 +53,7 @@ A "buy-mirroring" alternative was considered and rejected for the CLI; we inheri
 | Frontend | Next.js 16 App Router + React 19 + TS + Tailwind v4 + shadcn/ui | Modern stack; same Vercel deploy as backend |
 | Backend compute | Python serverless function (`api/analyze.py`) on Vercel | Reuses the CLI's tested Python math (~1,000 LoC) |
 | Auth + DB + Storage | Supabase | Email/password + reset built-in; Postgres + RLS; private storage bucket |
+| Transactional email | **Resend** SMTP, wired via Supabase Auth → SMTP Settings | Replaces Supabase built-in SMTP (2/hour project-wide cap). Currently uses Resend's shared `onboarding@resend.dev` sender — emails land in spam on Gmail. Custom-domain DNS setup is a Phase-7-polish item in TODO. |
 | Charts | Plotly figure JSON (built server-side, rehydrated in the browser) | Matches CLI output |
 | Snapshots | **Frozen** at run time | User picked this — fast loads, no recompute drift |
 
@@ -206,7 +208,7 @@ scripts/
 
 supabase/migrations/               SQL migrations; apply via Dashboard or MCP
 requirements.txt                   root Python deps (Vercel reads from here)
-vercel.json                        function config: maxDuration 300, memory 1024
+vercel.json                        function config: maxDuration 60 (Hobby), memory 1024
 next.config.ts                     server-actions body limit + dev-only rewrite to localhost:3001
 ```
 

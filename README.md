@@ -2,7 +2,7 @@
 
 Web app version of [do-i-beat-the-index](https://github.com/vinamrajain99/do-i-beat-the-index) — the same deposit-mirrored portfolio-vs-benchmark analysis, but with login, persistent saved analyses, and a browser UI.
 
-**Status: under construction.** Phases 1 – 5 are complete. Vercel deploy (Phase 6) is the only remaining roadmap item.
+**Live at https://do-i-beat-the-index-web.vercel.app** (Vercel Hobby tier). Phases 1 – 7 shipped. Transactional emails go through Resend (shared `onboarding@resend.dev` sender for now; custom-domain DNS setup is the only remaining polish step before sharing with real users).
 
 ## Architecture
 
@@ -172,7 +172,8 @@ vercel.json                      function config (maxDuration, memory)
 - [x] Phase 3.5: HTTP wrapper (`api/analyze.py`) + UI trigger/polling
 - [x] Phase 4: Results page — interactive Plotly chart + HTML summary table
 - [x] Phase 5: Delete-an-analysis UI to free a slot
-- [ ] Phase 6: Deploy to Vercel (prod env vars + Auth redirect URLs)
+- [x] Phase 6: Deploy to Vercel (prod env vars + Auth redirect URLs, end-to-end smoke test in prod)
+- [x] Phase 7: Custom SMTP via Resend (shared sender; custom-domain DNS setup is a future polish step)
 
 ## License
 

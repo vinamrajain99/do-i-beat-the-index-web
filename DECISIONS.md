@@ -82,3 +82,41 @@ Audience is `"authenticated"` for both branches.
 - Adding a new card on `/dashboard/[id]` now requires picking a width: `max-w-3xl` for text-shaped cards, `max-w-7xl` (or no max) for data-heavy ones. Both forms are demonstrated in the file; keep the pattern when adding new cards.
 - The `<main>` no longer constrains children, so any new child without an explicit width will stretch to 1280 px — be deliberate.
 - The dashboard list (`/dashboard/page.tsx`) is unchanged; it stays at `max-w-3xl` since each list row is a simple flex element.
+
+---
+
+## 2026-05-13 — Deploy on Vercel **Hobby** tier; downgrade `maxDuration` 300 → 60
+
+**Context.** `vercel.json` was authored during Phase 3.5 with `maxDuration: 300` (Pro-tier ceiling), to give cold yfinance fetches plenty of headroom. Phase 6 forced a real choice between (a) subscribing to Vercel Pro ($20/mo) to keep 300s, or (b) the free Hobby tier capped at 60s per Python function invocation.
+
+**Decision.** Hobby tier; downgrade `maxDuration` to 60 (commit `566054c`). Accept that cold first-runs on a long-history ticker may time out, with the user expected to retry — the second run benefits from the partial `benchmark_price_cache` warm-up from the first.
+
+**Alternatives considered.**
+- **Pro tier ($20/mo).** Removes the cap entirely. Rejected: nobody is paying $20/mo for what is currently a personal portfolio analyser used by 1 person. Always reversible if traffic ever grows.
+- **Pre-warm the cache server-side via a cron** that yfinance-prefetches all common benchmarks daily. Possible but adds a scheduled job, monitoring, and ongoing compute cost. Defer to a future "fast cold start" effort if 60s becomes a regular pain point.
+- **Move the worker off Vercel** to a long-running server (Fly.io, Railway, a tiny VM). Bigger architectural shift; defeats the simplicity of the all-in-one Vercel deploy.
+
+**Consequences.**
+- The 1024 MB memory setting in `vercel.json` stays — pandas + scipy + yfinance + plotly still OOM at 256 MB defaults. Memory is independent of maxDuration on Hobby tier.
+- Worker fallback: on a 60s timeout, `worker.analyze.main` never reaches the writeback step, so the row stays in `running` indefinitely. The `AnalysisRunner` client component shows a >5min "still running" copy nudge — which now doubles as a "timed out, retry by deleting and re-submitting" nudge. The existing TODO entry for a janitor / auto-reset cron becomes more valuable once any real traffic shows up.
+- Cold yfinance fetches that *do* complete in time still populate the benchmark cache; subsequent runs on the same ticker are seconds, not tens of seconds. So the timeout risk decays naturally with usage.
+- If we later want to upgrade to Pro, the only file change is bumping `maxDuration` back. No code dependency on the limit.
+
+---
+
+## 2026-05-13 — Production SMTP: defer to Phase 7 (custom provider), not built-in Supabase
+
+**Context.** Closing Phase 6 surfaced that Supabase's built-in SMTP service caps at ~2 emails/hour project-wide on the free tier. Confirmed via Supabase MCP `get_logs` → `error_code: over_email_send_rate_limit`, status 429. The forgot-password action ([src/app/auth/forgot-password/actions.ts](src/app/auth/forgot-password/actions.ts)) deliberately returns `{success: true}` regardless of SMTP outcome (to avoid leaking account existence), so rate-limited emails are silently dropped from the user's perspective.
+
+**Decision.** Built-in SMTP stays for now (sufficient to test the prod deploy with). Custom SMTP becomes Phase 7 — required before any real traffic. Recommended provider: **Resend** (3000/mo, 100/day, free tier, no credit card, GitHub OAuth signup, single API key + 4 fields of Supabase Auth → SMTP Settings to wire up). Alternatives kept on the bench: AWS SES (cheapest at scale, more setup), Postmark (best deliverability), SendGrid, Mailgun.
+
+**Alternatives considered.**
+- **Subscribe to Supabase Pro** to raise the rate limit. Rejected: $25/mo and still caps emails (just higher). Doesn't solve the "we're dependent on Supabase's email infra forever" coupling.
+- **Build our own SMTP via raw nodemailer / a custom Edge Function**. Rejected: zero upside vs. a dedicated provider, ops burden, deliverability risk (no sending reputation, likely lands in spam).
+- **Skip transactional email entirely** by requiring users to confirm via something else (magic links via a different transport, OAuth-only signup). Bigger product change; not worth it for a hobby app.
+
+**Consequences.**
+- Phase 7 is "free" in dollars but requires user dashboard action (Resend signup + Supabase config). No code change in this repo.
+- The forgot-password action's silent-on-failure behavior should arguably surface SMTP failures to *logs* even if not to the UI. Recorded as a follow-up in TODO.md → Phase 7 plan.
+- Once on a real provider, deliverability becomes about domain reputation. Using `onboarding@resend.dev` (Resend's shared verified sender) works but lands in spam more often. Phase 7 should ideally pair with a verified custom domain.
+- The Supabase MCP `get_logs` for the auth service was instrumental in diagnosing this — recording here so future debugging starts there for any auth-flow issue.

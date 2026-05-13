@@ -2,16 +2,12 @@
 
 ## Now
 
-- [ ] **Phase 6** — Vercel deploy
-  - [ ] Create a Vercel project (web UI is fine — no CLI needed if using GitHub integration)
-  - [ ] Connect this GitHub repo (`vinamrajain99/do-i-beat-the-index-web`); set production branch = `main`
-  - [ ] Set Vercel env vars: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SITE_URL` (= the Vercel prod URL). Leave `SUPABASE_JWT_SECRET` empty — asymmetric JWT path fetches JWKS publicly.
-  - [ ] Update Supabase Dashboard → Auth → URL Configuration: add prod URL to **Site URL** and add `<prod>/auth/callback` + `<prod>/auth/reset-password` to **Redirect URLs**.
-  - [ ] `maxDuration: 300` in `vercel.json` requires the Pro plan — confirm subscription or downgrade to `60` (typical worker run is well under 60 s when cache is warm).
-  - [ ] Verify: sign up → submit analysis → chart renders, delete works.
+_Nothing actively in flight — Phases 1–7 all shipped. See "Later" for the next layer of polish work._
 
 ## Later
 
+- [ ] **Set up a custom sender domain in Resend** for better deliverability — currently using `onboarding@resend.dev` (shared sender), emails are landing in spam on Gmail. ~5 min: add 3 DNS records (SPF, DKIM, DMARC) to a domain you own, verify in Resend, change the Sender email in Supabase Auth → SMTP Settings. Required before sharing the app with real users.
+- [ ] Surface SMTP send failures to server logs (Supabase Auth logs / app logs), even though the forgot-password UI deliberately stays generic. Current behavior: any send failure (rate-limit, bounce, misconfig) is invisible. Should not affect the UX guarantee (no account-existence leak via UI) but adds ops visibility.
 - [ ] Regenerate or delete the 3 pre-styling analyses created earlier this day (they still have the old "Robinhood actual vs. benchmark" title + verbose y-axis ticks). Cheapest fix: use the new Delete button and re-submit if you want them back.
 - [ ] Port the CLI's `test_sanity.py` as a regression suite for `worker/` (XIRR zero-delta, withdrawal overflow, parser sanity).
 - [ ] Stuck-`running` recovery — today only a >5min copy nudge on `/dashboard/[id]`; consider a daily cron / janitor that resets rows stuck in `running` for >10min back to `failed` with a generic error.
@@ -19,8 +15,10 @@
 - [ ] Upgrade the delete confirm UX from `window.confirm()` to a shadcn Dialog (requires adding the Dialog primitive — about 50 lines of handwritten code in `src/components/ui/`).
 - [ ] Add per-benchmark colors in the HTML summary table matching the chart's line colors, so it's easier to map row ↔ line at a glance.
 
-## Done (Phases 1 – 5)
+## Done (Phases 1 – 7)
 
+- [x] **Phase 7** — Custom SMTP via Resend. Supabase Auth → SMTP Settings now points at `smtp.resend.com:587` with the Resend API key as the password. Sender = `onboarding@resend.dev` (shared sender — works, lands in spam on Gmail, fix is a custom domain — see Later). Removes the 2-emails/hour built-in cap; Resend free tier is 3000/mo, 100/day. Smoke test 2026-05-13 confirmed forgot-password email arrives + reset flow works end-to-end. Zero code changes — entirely Supabase + Resend dashboard config.
+- [x] **Phase 6** — Vercel deploy. Live at `https://do-i-beat-the-index-web.vercel.app`. Env vars set on Vercel (`SUPABASE_SERVICE_ROLE_KEY` marked Sensitive; `SUPABASE_JWT_SECRET` left blank, asymmetric path uses JWKS). `vercel.json` `maxDuration` 300 → 60 for Hobby tier (commit `566054c`). Fixed initial build error: wrapped `/auth/login`'s `useSearchParams()` in a Suspense boundary (commit `99287e2`). Supabase Auth URL Configuration updated for prod redirects. Full E2E smoke test passed: signup → email confirm → submit analysis (SPY) → chart renders → delete (row + CSV) → password reset → login with new password.
 - [x] **Phase 1** — Auth: sign up, log in, password reset, callback route, sign-out action. Supabase RLS + 5-row trigger + `csvs` storage bucket.
 - [x] **Phase 2** — New-analysis form (`/dashboard/new`): name, current value, 1–5 benchmark chips, CSV upload. Server action inserts pending row + uploads CSV to `csvs/<uid>/<id>.csv`.
 - [x] **Phase 3 (math-only)** — Python `worker/` package. Parses Robinhood CSV → computes XIRR/CAGR for actual → simulates each benchmark via deposit-mirrored sim with Postgres-cached yfinance prices → writes Plotly figure JSON + summary to `results_json`. CLI: `python -m worker.analyze <id>`.
