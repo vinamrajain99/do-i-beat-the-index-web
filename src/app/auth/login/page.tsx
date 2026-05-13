@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { Suspense, useActionState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -17,8 +17,20 @@ import {
 import { loginAction, type LoginState } from "./actions";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginForm next="/dashboard" />}>
+      <LoginFormWithSearchParams />
+    </Suspense>
+  );
+}
+
+function LoginFormWithSearchParams() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/dashboard";
+  return <LoginForm next={next} />;
+}
+
+function LoginForm({ next }: { next: string }) {
   const [state, formAction, pending] = useActionState<LoginState, FormData>(
     loginAction,
     undefined,
