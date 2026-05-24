@@ -21,8 +21,13 @@ export async function forgotPasswordAction(
 
   // Supabase deliberately returns success even if the email doesn't exist,
   // to avoid leaking whether an account is registered. We mirror that here.
+  // Land directly on /auth/reset-password (no Supabase verify hop, no
+  // /auth/callback hop). The email template appends ?token_hash=&type=recovery
+  // to this URL, and verifyOtp() runs only on form submit — which means link
+  // pre-scanners (Gmail, etc.) can't burn the single-use token before the user
+  // clicks. See DECISIONS.md (2026-05-23).
   await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${siteUrl}/auth/callback?next=/auth/reset-password`,
+    redirectTo: `${siteUrl}/auth/reset-password`,
   });
 
   return { success: true, email };

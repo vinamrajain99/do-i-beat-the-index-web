@@ -5,7 +5,7 @@
 Web app version of a Robinhood portfolio analyser. Multi-user, persisted analyses, browser UI.
 
 - **CLI companion** (source of the math): `/Users/aayushipandit/Desktop/Claude-Work/Robinhood portfolio analyser/`, public at https://github.com/vinamrajain99/do-i-beat-the-index (MIT).
-- **This repo on GitHub:** https://github.com/vinamrajain99/do-i-beat-the-index-web (private during build-out).
+- **This repo on GitHub:** https://github.com/vinamrajain99/do-i-beat-the-index-web (public).
 - **Production deploy:** https://do-i-beat-the-index-web.vercel.app — Vercel Hobby tier, builds from `main`. Phases 1–6 shipped.
 
 ## Session handoff state
