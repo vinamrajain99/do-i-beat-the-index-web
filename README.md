@@ -2,7 +2,9 @@
 
 Web app version of [do-i-beat-the-index](https://github.com/vinamrajain99/do-i-beat-the-index) — the same deposit-mirrored portfolio-vs-benchmark analysis, but with login, persistent saved analyses, and a browser UI.
 
-**Live at https://do-i-beat-the-index-web.vercel.app** (Vercel Hobby tier). Phases 1 – 7 shipped. Transactional emails go through Resend (shared `onboarding@resend.dev` sender for now; custom-domain DNS setup is the only remaining polish step before sharing with real users).
+**Live at https://do-i-beat-the-index-web.vercel.app.**
+
+> Note: the app is not currently accepting new user signups while custom-domain email setup is pending.
 
 ## Architecture
 
@@ -132,6 +134,7 @@ src/
 ├── components/ui/               shadcn primitives (Button, Input, Label, Card)
 ├── lib/
 │   ├── utils.ts                 cn() helper
+│   ├── types.ts                 Analysis + ResultsJson types + UI caps (MAX_ANALYSES_PER_USER, etc.)
 │   └── supabase/
 │       ├── client.ts            createBrowserClient for client components
 │       ├── server.ts            createServerClient for RSC / Server Actions
@@ -174,7 +177,7 @@ vercel.json                      function config (maxDuration, memory)
 - [x] Phase 4: Results page — interactive Plotly chart + HTML summary table
 - [x] Phase 5: Delete-an-analysis UI to free a slot
 - [x] Phase 6: Deploy to Vercel (prod env vars + Auth redirect URLs, end-to-end smoke test in prod)
-- [x] Phase 7: Custom SMTP via Resend (shared sender; custom-domain DNS setup is a future polish step)
+- [x] Phase 7: Custom SMTP via Resend (shared sender — blocks non-owner recipients; custom-domain DNS is a precondition for opening the app to other users)
 
 ## License
 
