@@ -125,7 +125,7 @@ src/
 │       │   ├── page.tsx         form: name, value, benchmark chips, CSV upload
 │       │   └── actions.ts       server action: validate, insert, upload, redirect
 │       └── [id]/
-│           ├── page.tsx         server: header, submission card, status-keyed body
+│           ├── page.tsx         server: header, overview (Cash flow + Current value cards), status-keyed body
 │           ├── analysis-runner.tsx  client: POST /api/analyze + 3s polling
 │           ├── plotly-chart.tsx     client: dynamic-imported Plotly.newPlot
 │           └── results-summary.tsx  server: HTML metrics table

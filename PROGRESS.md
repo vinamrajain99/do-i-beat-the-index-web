@@ -206,3 +206,39 @@ After that, the **signup-callback follow-up** (TODO.md → Later, second entry) 
 **Next session should pick up**
 
 The Resend custom-domain item is now the single highest-leverage thing on the list — it (a) unblocks live verification of the just-shipped signup flow, (b) takes the app from "personal use only" to "shareable," and (c) gets emails out of spam folders. ~10 min if you already own a domain with DNS access. The Supabase keep-alive GHA workflow is still the runner-up if you want code-only work that doesn't depend on external setup.
+
+## Session 2026-05-24 (cont.) — Results page UI polish
+
+**Shipped**
+
+- **Plotly chart modebar trimmed** (commit `440f8c6`). [`src/app/dashboard/[id]/plotly-chart.tsx`](src/app/dashboard/[id]/plotly-chart.tsx) now passes `modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d", "resetScale2d"]` and a `modeBarButtonsToAdd` entry for a custom **Reset** button (`Plotly.Icons.home`, click handler `relayout({ "xaxis.autorange": true, "yaxis.autorange": true })`). Lasso/box select had no consumer (no `plotly_selected` listener, no linked view); `autoScale2d` was redundant with `resetScale2d` because `worker/chart.py` sets no explicit axis ranges; native "Reset axes" tooltip got renamed to just "Reset". Net modebar: download PNG, zoom, pan, zoom in, zoom out, Reset, hover toggles.
+- **Top-of-page "Submission" card replaced with two side-by-side overview cards** (commit `ff89376`). [`src/app/dashboard/[id]/page.tsx`](src/app/dashboard/[id]/page.tsx) now renders a `<section className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl ... items-start">` containing:
+  - **Cash flow** card — 2×2 grid of tiles: `TOTAL DEPOSITED` / `DEPOSITS` (count) on top row, `TOTAL WITHDRAWN` / `WITHDRAWALS` (count) on bottom row.
+  - **Current value** card — 2-col grid with `YOUR PORTFOLIO` (user-typed `current_value_usd`, always present) plus one tile per benchmark showing `summary.benchmarks[ticker].final_value`.
+- **New helpers, all inline in `page.tsx`**:
+  - `fmtUsd(n)` and `fmtCount(n)` — format with `—` fallback for null/undefined/non-finite.
+  - `StatTile({ label, value, loading? })` — uppercase tracking-wider muted label (`text-[0.7rem]`) over a `text-lg font-semibold tabular-nums` value. Accepts pre-formatted string for flexibility.
+  - `LoadingDots()` — three `h-2 w-2` muted dots using Tailwind's `animate-pulse` with arbitrary `[animation-delay:0/200/400ms]` for a staggered wave; carries `role="status" aria-label="Loading"`.
+- **Loading-state UX rule** (also in `ff89376`): `StatTile` shows `<LoadingDots />` only when `loading && value === "—"`. `isLoading = status === "pending" || status === "running"`. Failed analyses fall back to static em-dashes — nothing's coming, no pulsing UI lie. "Your portfolio" tile keeps its dollar value pre-results because the value isn't `"—"`.
+- **Layout-stability guarantee**: same DOM shape pre and post results. Values just swap in, no card resize or content shift when the worker completes.
+- **CLAUDE.md trimmed for the rename**: file map line for `[id]/page.tsx` updated (`submission` → `overview`); per-card-max-width note now describes the new section/inner-card structure.
+- **Local dev env restored**: main repo's `.env.local` was missing (only existed in `.claude/worktrees/sad-ptolemy-e0dd0e/`). Copied the worktree's `.env.local` (1235 B, Phase-3.5 shape with HS256 `SUPABASE_JWT_SECRET` populated — harmless, the asymmetric path is what `api/analyze.py` uses) to repo root. `NEXT_PUBLIC_SITE_URL` already `http://localhost:3000`. Documented in CLAUDE.md's "Worktrees do NOT share gitignored files" gotcha — same root cause applies to the repo root itself if `.env.local` was never created there.
+
+**Stumbles worth noting**
+
+- **Initial Phase 3.5–era discussion about labels**: settled on `Deposits` / `Withdrawals` (short) for the count tiles, distinguishing them from `Total deposited` / `Total withdrawn` (dollar amounts) by both label wording and the integer-vs-currency value formatting. Felt clean in practice.
+- **`/dashboard` 404'd with "Your project's URL and Key are required to create a Supabase client!"** after `npm run dev` — diagnosed in ~30s as missing `.env.local` rather than a broken proxy. The error correctly bubbled from `src/lib/supabase/proxy.ts:14` (createServerClient with `process.env.NEXT_PUBLIC_SUPABASE_URL!`). Worth remembering: Next.js loads env files only at process start; restart after editing.
+
+**In progress**
+
+- _Nothing._ Both commits pushed? No — local `main` is ahead of `origin/main` by 2 commits (`440f8c6` chart fix, `ff89376` overview cards). Push wasn't requested this session.
+
+**Blocked**
+
+- _Same as the prior 2026-05-24 entry_ — Resend custom-domain setup still blocks live signup-confirmation verification and any non-owner email recipient.
+
+**Next session should pick up**
+
+1. **Push the two new commits to `origin/main`** if not already done — Vercel auto-deploys from `main`, so the UI improvements aren't live until pushed. `git push origin main`.
+2. **Resend custom-domain setup** remains the top-of-list polish item (carrying over from prior session). ~10 min DNS work.
+3. After deploy, eyeball the overview cards on Vercel prod with real screen widths to confirm the side-by-side layout reads well on common mobile viewport sizes.

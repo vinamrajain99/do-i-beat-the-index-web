@@ -102,7 +102,7 @@ Metric values that would be NaN/Inf (e.g. XIRR on a deeply negative portfolio) a
 - **Local dev uses a stand-alone Python HTTP server**, not `vercel dev`. See "Local development" below + DECISIONS.md.
 - **Chart and metrics table are decoupled.** `worker/chart.py` returns a chart-only Plotly figure. The metrics summary is rendered as a native HTML `<table>` in `src/app/dashboard/[id]/results-summary.tsx`. The HTML version is theme-aware, accessible, and easy to restyle. See DECISIONS.md.
 - **Both password reset and signup confirmation use `token_hash` + `verifyOtp` (verify-on-submit), not `?code=` exchange (verify-on-GET).** Email links point directly at `/auth/reset-password?token_hash=…&type=recovery` or `/auth/confirm?token_hash=…&type=email`; `verifyOtp` runs only inside the form's submit action so link pre-scanners (Gmail, etc.) can't burn the single-use token. **Two paired Supabase Dashboard email templates** must use the right URL: "Reset Password" → `{{ .SiteURL }}/auth/reset-password?token_hash={{ .TokenHash }}&type=recovery`; "Confirm signup" → `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`. If either gets reset to the default `{{ .ConfirmationURL }}`, that flow silently breaks. `/auth/callback` has been deleted (no remaining caller). See DECISIONS.md (2026-05-23, two entries).
-- **Page layout uses per-card max-widths**, not a single page-level constraint. Outer `<main>` is `max-w-7xl`; text-shaped cards (header, submission, queued, failed) carry `max-w-3xl mx-auto w-full` individually; the results card spans the full 1280 px. When adding new cards, be deliberate about which width to apply. See DECISIONS.md.
+- **Page layout uses per-card max-widths**, not a single page-level constraint. Outer `<main>` is `max-w-7xl`; text-shaped cards (header, overview section, queued, failed) carry `max-w-3xl mx-auto w-full` individually; the results card spans the full 1280 px. The overview "section" wraps a 2-column md grid of two cards (Cash flow + Current value), so the `max-w-3xl` is on the section, not each inner card. When adding new cards, be deliberate about which width to apply. See DECISIONS.md.
 
 ## Local development
 
@@ -178,7 +178,7 @@ src/
 │       │   ├── page.tsx           form: name, value, benchmark chips, CSV
 │       │   └── actions.ts         createAnalysisAction (insert + upload + redirect)
 │       └── [id]/
-│           ├── page.tsx           server: header, submission, status-keyed body, delete in footer
+│           ├── page.tsx           server: header, overview (Cash flow + Current value cards w/ animated loading dots when pending/running), status-keyed body, delete in footer
 │           ├── analysis-runner.tsx  client: POST /api/analyze + 3s polling
 │           ├── plotly-chart.tsx   client: dynamic import of plotly.js-dist-min + Plotly.newPlot
 │           └── results-summary.tsx  server: HTML metrics table (Your portfolio + benchmarks + Δ)
