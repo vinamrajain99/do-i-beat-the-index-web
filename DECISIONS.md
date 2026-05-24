@@ -157,3 +157,27 @@ The vulnerability: the token is consumed by `/auth/v1/verify` on GET — and GET
 - **Genuinely-expired tokens** (user waited >1hr to click) now surface as a clean in-form error message ("Reset link is invalid or has expired. Request a new password reset email.") instead of a redirect-bounce with hash-fragment error codes. Strictly better UX.
 - **The `code` flow still works for any unmodified email template** — but only as an accident of `/auth/callback` still being mounted. We're not relying on it; new emails should never trigger it.
 - **End-to-end verified in prod** 2026-05-23 by the user in an incognito Chrome window.
+
+---
+
+## 2026-05-23 — Apply the same `token_hash` + `verifyOtp` pattern to signup confirmation; delete `/auth/callback`
+
+**Context.** The recovery flow ADR above noted in its Consequences that `/auth/callback` was still mounted because signup email confirmation also went through the `?code=` exchange. Same Gmail-prefetch vulnerability, but the user-facing impact was different: prefetcher GETs Supabase's verify endpoint, the account is silently auto-confirmed (because Supabase's verify endpoint sets a session cookie on the prefetcher's HTTP client and considers the email confirmed), and the user clicking the link sees the "invalid code" bounce to `/auth/login?error=auth_code_invalid`. The user can still log in because the account is in fact confirmed — just confusing UX rather than a hard block. Still worth fixing for code hygiene + consistency + closing the silent-auto-confirm gap.
+
+**Decision.** Mirror the recovery fix one-for-one for signup:
+- New `/auth/confirm` route (server `page.tsx` reading `searchParams`, client `form.tsx` with a single "Confirm email" button, server `actions.ts` calling `verifyOtp({ type: 'email', token_hash })` → `/dashboard`).
+- `signupAction` — `emailRedirectTo` swapped from `${siteUrl}/auth/callback?next=/dashboard` to `${siteUrl}/auth/confirm`.
+- **Paired Supabase Dashboard change** — "Confirm signup" email template link target: `{{ .ConfirmationURL }}` → `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`.
+- **`/auth/callback/route.ts` deleted entirely** — no remaining caller in the app. Recovery bypasses it (since 2026-05-23 recovery fix), and signup now bypasses it too. Any old confirmation/recovery emails in inboxes from before this change will 404 on click — acceptable since the only known user (vinamrajain99@gmail.com) is already confirmed, and unconsumed recovery emails expire in ~1hr.
+
+**Alternatives considered.**
+- **Keep `/auth/callback` as a backward-compat fallback** — would prevent 404s on stale emails. Rejected for a single-user app: simpler to have only one valid code path. If we ever onboard real users, we can re-add it with a friendly "this link expired, please request a new one" page.
+- **Make `/auth/confirm` auto-submit on mount instead of requiring a button press** — would smooth the UX (one fewer click). Rejected because it defeats the entire point of the fix: auto-submit on mount is exactly what prefetchers/crawlers exercise. The button press is load-bearing.
+- **Verify on the page itself (server component) instead of in a separate action** — same problem. Prefetcher GETs the page → server component runs → token consumed. Has to be POST-only.
+
+**Consequences.**
+- **Two Supabase email templates are now load-bearing** — both "Reset Password" and "Confirm signup" must use the custom URLs. A dashboard template reset to defaults would silently break the corresponding flow. CLAUDE.md "Critical non-obvious decisions" calls this out; consider a future automated check (hit `/auth/confirm` with no token_hash, confirm the error UI shows) in CI to catch a silent template regression.
+- **Stale signup emails 404 instead of working** — the prior `/auth/callback` URL no longer exists. Low impact for current usage; would warrant a redirect handler if/when traffic grows.
+- **Supabase Auth → URL Configuration Redirect URLs** should add `/auth/confirm` (prod + localhost variants). `/auth/callback` entries can stay or be removed — removing is cleaner hygiene. README.md updated accordingly.
+- **No code path now uses `exchangeCodeForSession`** in the entire app. If we ever add OAuth providers (Google sign-in, GitHub, etc.), we'll need to either re-create `/auth/callback` or use Supabase's PKCE flow directly. Worth remembering before adding social auth.
+- **Pattern is now consistent** across auth flows — recovery, signup, and any future email-link flow (magic-link login, email change) should all use `token_hash` + `verifyOtp`.

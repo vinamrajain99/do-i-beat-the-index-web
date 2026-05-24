@@ -43,7 +43,8 @@ Open **SQL Editor** in the Supabase dashboard, paste the contents of `supabase/m
 
 In the Supabase dashboard:
 
-- **Auth → URL Configuration**: set **Site URL** to `http://localhost:3000` (later: your Vercel URL). Add `http://localhost:3000/auth/callback` and `http://localhost:3000/auth/reset-password` to **Redirect URLs**.
+- **Auth → URL Configuration**: set **Site URL** to `http://localhost:3000` (later: your Vercel URL). Add `http://localhost:3000/auth/confirm` and `http://localhost:3000/auth/reset-password` to **Redirect URLs**.
+- **Auth → Email Templates**: edit "Confirm signup" link to `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email` and "Reset Password" link to `{{ .SiteURL }}/auth/reset-password?token_hash={{ .TokenHash }}&type=recovery`. The defaults use `{{ .ConfirmationURL }}` which is vulnerable to mail-scanner link prefetching — see DECISIONS.md.
 - **Auth → Providers → Email**: enable, and turn on "Confirm email" (default).
 
 ### 4. Install npm deps
@@ -114,7 +115,7 @@ src/
 │   │   ├── signup/              page + server action (sends confirmation email)
 │   │   ├── forgot-password/     page + server action (sends reset email)
 │   │   ├── reset-password/      server page (reads token_hash) + form.tsx (client) + actions.ts (verifyOtp + updateUser)
-│   │   ├── callback/route.ts    exchanges email-link code for session (signup confirmation)
+│   │   ├── confirm/             server page + form.tsx + actions.ts — same shape, for signup email confirmation
 │   │   └── sign-out/actions.ts  server action used by Sign out button
 │   └── dashboard/
 │       ├── page.tsx             list of analyses (max 5) + "+ New analysis" + per-row Delete
