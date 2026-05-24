@@ -173,3 +173,36 @@ No active phase. The build is fundamentally done. When ready for polish, the nat
 The highest-value next item is the **Supabase keep-alive GitHub Actions workflow** (TODO.md → Later, first entry). It's ~20 lines of YAML + 1 GHA secret, prevents today's "project auto-paused → fetch error on login" from recurring, and the repo being public means GHA minutes are unlimited and free. Estimate: 15–30 min including a test run.
 
 After that, the **signup-callback follow-up** (TODO.md → Later, second entry) is the next natural code change — applies today's `token_hash` + `verifyOtp` pattern to the signup confirmation flow, which has the same prefetch vulnerability. Lower urgency (silent auto-confirm rather than locked-out user), but cleanest while the pattern is fresh.
+
+## Session 2026-05-24 — Signup-confirmation follow-up + Resend sandbox discovery
+
+**Shipped**
+
+- **Signup confirmation flow rewritten** (commit `f8f599e`, pushed to `origin/main`). Mirrors the 2026-05-23 recovery fix one-for-one:
+  - New `/auth/confirm` route: `page.tsx` (server, reads `searchParams.token_hash` + `searchParams.type`), `form.tsx` (client, single "Confirm email" button, disables on missing token), `actions.ts` (calls `verifyOtp({ type: 'email', token_hash })` then `redirect("/dashboard")`).
+  - `src/app/auth/signup/actions.ts` — `emailRedirectTo` swapped from `${siteUrl}/auth/callback?next=/dashboard` to `${siteUrl}/auth/confirm`.
+  - **`src/app/auth/callback/route.ts` deleted entirely.** No remaining caller — recovery bypassed it 2026-05-23, signup now bypasses it. Stale unconfirmed signup emails from before today will 404 on click; acceptable for current usage (single known user, already confirmed).
+- **Supabase Dashboard changes** (user did manually, paired with the code deploy):
+  - "Confirm signup" email template link target: `{{ .ConfirmationURL }}` → `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`.
+  - Auth → URL Configuration → Redirect URLs: added `https://do-i-beat-the-index-web.vercel.app/auth/confirm` + `http://localhost:3000/auth/confirm`. `/auth/callback` entries left as-is for now (harmless dead allowlist entries).
+- **DECISIONS.md ADR added** ("2026-05-23 — Apply the same `token_hash` + `verifyOtp` pattern to signup confirmation; delete `/auth/callback`"). Notes the two-template dependency, why `/auth/confirm` can't auto-submit on mount (would defeat the entire fix), and the gotcha that `exchangeCodeForSession` is no longer used anywhere — if/when OAuth providers are added, a fresh `/auth/callback` (or Supabase's PKCE flow) will be needed.
+- **CLAUDE.md + README.md + TODO.md** updated for the route move (file map, auth setup instructions, TODO item closed).
+- **Two prior commits pushed to `origin/main`**: `13e59a9` (yesterday's docs `/save-progress`) and `f8f599e` (today's signup fix).
+
+**In progress / partial**
+
+- **Signup-confirmation flow is shipped + deployed but NOT live-verified end-to-end.** Attempted live verification using a Gmail `+confirm-test` alias trick (Gmail same-inbox, Supabase fresh-user). Failed: Resend rejected the send with `550 You can only send testing emails to your own email address (vinamrajain99@gmail.com)`. User opted to skip the live test rather than burn the existing account or rush a custom-domain setup. The code change is byte-for-byte parallel to the working recovery flow (which IS live-verified), so confidence is high but not 100%. Will be naturally verified on the next real signup once a custom Resend domain is configured.
+
+**Stumbles worth noting**
+
+- **The Gmail `+alias` trick does not bypass Resend's sandbox.** Gmail routes `foo+bar@gmail.com` to `foo@gmail.com`, but Resend evaluates the literal recipient string against its allowlist. The Supabase auth log was decisive — `mcp__supabase__get_logs` returned the SMTP-level 550 with the exact error string. Reminder: for any auth flow misbehavior, check `auth` logs first — that's two sessions running where the smoking gun was in there.
+- **Two orphan users left in `auth.users`** from the failed signup attempts (both `vinamrajain99+confirm-test@gmail.com`, no confirmation, no password persisted on confirmation path). Harmless until someone tries the same alias again; logged as a cleanup TODO.
+- **Resend sandbox restriction was a known unknown that became a known known.** TODO.md → Later had a "custom Resend domain" entry framed as "deliverability / lands in spam." Today escalated it: it's not just spam, it's outright SMTP rejection for any non-owner recipient. Updated the TODO entry with the harder framing.
+
+**Blocked**
+
+- **Live verification of the signup-confirm flow** — blocked on Resend custom domain setup OR on a destructive delete-and-resign of `vinamrajain99@gmail.com`. Captured in TODO.md → Blocked.
+
+**Next session should pick up**
+
+The Resend custom-domain item is now the single highest-leverage thing on the list — it (a) unblocks live verification of the just-shipped signup flow, (b) takes the app from "personal use only" to "shareable," and (c) gets emails out of spam folders. ~10 min if you already own a domain with DNS access. The Supabase keep-alive GHA workflow is still the runner-up if you want code-only work that doesn't depend on external setup.
