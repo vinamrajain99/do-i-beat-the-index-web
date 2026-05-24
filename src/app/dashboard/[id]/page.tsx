@@ -30,20 +30,62 @@ const STATUS_CLASSES: Record<AnalysisStatus, string> = {
   failed: "bg-destructive/10 text-destructive border border-destructive/30",
 };
 
-function formatUsd(n: number): string {
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  });
-}
-
 function formatDate(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
   });
+}
+
+function fmtUsd(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  return n.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
+function fmtCount(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  return n.toLocaleString("en-US");
+}
+
+function LoadingDots() {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 align-middle"
+      aria-label="Loading"
+      role="status"
+    >
+      <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-pulse" />
+      <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-pulse [animation-delay:200ms]" />
+      <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-pulse [animation-delay:400ms]" />
+    </span>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  loading = false,
+}: {
+  label: string;
+  value: string;
+  loading?: boolean;
+}) {
+  const showDots = loading && value === "—";
+  return (
+    <div>
+      <dt className="text-[0.7rem] uppercase tracking-wider font-medium text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="mt-1.5 text-lg font-semibold tabular-nums text-foreground">
+        {showDots ? <LoadingDots /> : value}
+      </dd>
+    </div>
+  );
 }
 
 export default async function AnalysisDetailPage({
@@ -75,6 +117,8 @@ export default async function AnalysisDetailPage({
   const analysis = data as Analysis;
   const statusLabel = STATUS_LABEL[analysis.status];
   const statusClasses = STATUS_CLASSES[analysis.status];
+  const isLoading =
+    analysis.status === "pending" || analysis.status === "running";
 
   return (
     <main className="flex-1 flex flex-col px-6 py-8 gap-6 max-w-7xl mx-auto w-full">
@@ -104,28 +148,70 @@ export default async function AnalysisDetailPage({
         </span>
       </header>
 
-      <Card className="max-w-3xl w-full mx-auto">
-        <CardHeader>
-          <CardTitle className="text-base">Submission</CardTitle>
-          <CardDescription>What you entered for this analysis.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
-            <div>
-              <dt className="text-muted-foreground">Current portfolio value</dt>
-              <dd className="font-medium">
-                {formatUsd(analysis.current_value_usd)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Benchmarks</dt>
-              <dd className="font-medium">
-                {analysis.benchmark_tickers.join(", ")}
-              </dd>
-            </div>
-          </dl>
-        </CardContent>
-      </Card>
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl w-full mx-auto items-start">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Cash flow</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
+              <StatTile
+                label="Total deposited"
+                value={fmtUsd(
+                  analysis.results_json?.summary.actual.total_deposited,
+                )}
+                loading={isLoading}
+              />
+              <StatTile
+                label="Deposits"
+                value={fmtCount(
+                  analysis.results_json?.summary.deposits_count,
+                )}
+                loading={isLoading}
+              />
+              <StatTile
+                label="Total withdrawn"
+                value={fmtUsd(
+                  analysis.results_json?.summary.actual.total_withdrawn,
+                )}
+                loading={isLoading}
+              />
+              <StatTile
+                label="Withdrawals"
+                value={fmtCount(
+                  analysis.results_json?.summary.withdrawals_count,
+                )}
+                loading={isLoading}
+              />
+            </dl>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Current value</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
+              <StatTile
+                label="Your portfolio"
+                value={fmtUsd(analysis.current_value_usd)}
+              />
+              {analysis.benchmark_tickers.map((ticker) => (
+                <StatTile
+                  key={ticker}
+                  label={ticker}
+                  value={fmtUsd(
+                    analysis.results_json?.summary.benchmarks[ticker]
+                      ?.final_value,
+                  )}
+                  loading={isLoading}
+                />
+              ))}
+            </dl>
+          </CardContent>
+        </Card>
+      </section>
 
       {analysis.status === "pending" || analysis.status === "running" ? (
         <Card className="max-w-3xl w-full mx-auto">
