@@ -101,6 +101,7 @@ Metric values that would be NaN/Inf (e.g. XIRR on a deeply negative portfolio) a
 - **Supabase uses asymmetric JWTs (ES256) on this project**, not the dashboard's "JWT Secret" (HS256). `api/analyze.py` inspects the JWT header `alg` and routes to either the legacy HS256 path (using `SUPABASE_JWT_SECRET`) or the modern asymmetric path (using `pyjwt.PyJWKClient` against `<project>.supabase.co/auth/v1/.well-known/jwks.json`). See DECISIONS.md (2026-05-12 entry) for the discovery and rationale. `SUPABASE_JWT_SECRET` is optional in prod for asymmetric-flow projects.
 - **Local dev uses a stand-alone Python HTTP server**, not `vercel dev`. See "Local development" below + DECISIONS.md.
 - **Chart and metrics table are decoupled.** `worker/chart.py` returns a chart-only Plotly figure. The metrics summary is rendered as a native HTML `<table>` in `src/app/dashboard/[id]/results-summary.tsx`. The HTML version is theme-aware, accessible, and easy to restyle. See DECISIONS.md.
+- **Password reset uses `token_hash` + `verifyOtp` (verify-on-submit), not `?code=` exchange (verify-on-GET).** The email link points directly at `/auth/reset-password?token_hash=…&type=recovery`; `verifyOtp` runs only inside the form's submit action so link pre-scanners (Gmail, etc.) can't burn the single-use token. The paired Supabase Dashboard email template must use `{{ .SiteURL }}/auth/reset-password?token_hash={{ .TokenHash }}&type=recovery` as the link target — if it gets reset to default `{{ .ConfirmationURL }}`, recovery silently breaks. Signup confirmation still uses the old `?code=` exchange via `/auth/callback` — has the same prefetch vulnerability but lower impact (silent auto-confirm vs. locked-out user). See DECISIONS.md (2026-05-23).
 - **Page layout uses per-card max-widths**, not a single page-level constraint. Outer `<main>` is `max-w-7xl`; text-shaped cards (header, submission, queued, failed) carry `max-w-3xl mx-auto w-full` individually; the results card spans the full 1280 px. When adding new cards, be deliberate about which width to apply. See DECISIONS.md.
 
 ## Local development
@@ -165,9 +166,9 @@ src/
 │   │   ├── layout.tsx             centered card wrapper
 │   │   ├── login/                 page + action (signInWithPassword)
 │   │   ├── signup/                page + action (signUp + confirm email)
-│   │   ├── forgot-password/       page + action (resetPasswordForEmail)
-│   │   ├── reset-password/        page + action (updateUser({password}))
-│   │   ├── callback/route.ts      exchangeCodeForSession on email-link click
+│   │   ├── forgot-password/       page + action (resetPasswordForEmail; redirectTo → /auth/reset-password)
+│   │   ├── reset-password/        page (server, reads token_hash from searchParams) + form.tsx (client form) + actions.ts (verifyOtp + updateUser)
+│   │   ├── callback/route.ts      exchangeCodeForSession; still used by signup confirmation (recovery now bypasses this)
 │   │   └── sign-out/actions.ts    signOut + redirect
 │   └── dashboard/
 │       ├── page.tsx               list of analyses (max 5) + "+ New analysis" CTA + per-row Delete

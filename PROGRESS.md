@@ -135,3 +135,41 @@ Started 2026-05-12. Earlier same-day work (Phases 1, 2, 3 math-only) is in commi
 **Next session should pick up**
 
 No active phase. The build is fundamentally done. When ready for polish, the natural next item is **custom-sender-domain DNS setup** in Resend (5 min of DNS work — SPF, DKIM, DMARC records added to a domain you own). This removes the spam-folder hit from the current `onboarding@resend.dev` shared sender and is the only remaining gap before sharing the app with real users. Other low-priority items in TODO.md → Later (test_sanity port, stuck-running cron, delete-confirm Dialog, etc.) can be picked in any order.
+
+## Session 2026-05-23 — Supabase auto-pause + Gmail-prefetch reset bug
+
+**Shipped**
+
+- **Diagnosed and unblocked login.** User reported "fetch error" on signin. Root cause: Supabase free tier auto-pauses projects after ~7 days of inactivity, and this project (last activity 2026-05-13) had gone `INACTIVE`. Restored via `mcp__supabase__restore_project` — flipped INACTIVE → COMING_UP → ACTIVE_HEALTHY in ~60s. Login worked again immediately after.
+- **Fixed Gmail-prefetch password reset bug** (commit `2556699`). The forgot-password flow was broken for all Gmail users: Gmail's link scanner pre-fetches links in incoming mail for safety, which GET-requests Supabase's `/auth/v1/verify` endpoint and consumes the single-use recovery token *before the user can click*. Every reset attempt landed at `/auth/login?error=auth_code_invalid#error_code=otp_expired`.
+  - **Architectural switch**: from `?code=` exchange (verify-on-GET, prefetch-vulnerable) to `token_hash` + `verifyOtp` (verify-on-form-submit, prefetch-immune). See DECISIONS.md (2026-05-23) for the full rationale.
+  - **Files changed**:
+    - `src/app/auth/forgot-password/actions.ts` — `redirectTo` now points directly at `/auth/reset-password` (no callback hop)
+    - `src/app/auth/reset-password/page.tsx` — converted from client component to server component, reads `token_hash` + `type` from `searchParams`, passes to a child form component
+    - `src/app/auth/reset-password/form.tsx` — **new file**; the client-side form, takes `tokenHash` + `type` as props, renders as hidden form fields, disables submit if no token
+    - `src/app/auth/reset-password/actions.ts` — reads `token_hash` from formData, calls `verifyOtp({ type, token_hash })` first (which consumes the token + sets the session), then `updateUser({ password })`. Genuinely-expired tokens surface as a clean error message in the form.
+  - **Paired Supabase Dashboard change** (user did this manually): edited "Reset Password" email template. Link target swapped from `{{ .ConfirmationURL }}` to `{{ .SiteURL }}/auth/reset-password?token_hash={{ .TokenHash }}&type=recovery`.
+  - **End-to-end verified in prod** by the user in an incognito window: forgot-password → email arrives → click link → lands on `/auth/reset-password` (no bounce) → set new password → auto-signed-in → `/dashboard`. Login with the new password also worked.
+- **Bookkeeping updates**:
+  - **CLAUDE.md** line 7: "(private during build-out)" → "(public)" — repo went public at some point between Phase 7 close and today.
+  - **TODO.md → Later**: added the Supabase keep-alive GHA workflow (with full design rationale + 2026-05-23 incident context) and the signup-callback follow-up (`/auth/callback` still uses the prefetch-vulnerable `code` flow for signup confirmation — lower impact since pre-scanner GET silently auto-confirms rather than locking the user out, but same bug class).
+
+**Stumbles worth noting**
+
+- **First broader-repo lint OOM'd** trying to parse leftover `.venv/` directories under `.claude/worktrees/{focused-bhaskara,great-lumiere,sad-ptolemy}-*` from earlier worktree-based sessions. ESLint hit a `RangeError: Invalid string length` in the stylish formatter on plotly's `widgetbundle.js`. Targeted lint on just the changed files was clean. Pre-existing problem worth fixing later by either adding `.claude/`, `.venv/` to ESLint ignore or `rm -rf .claude/worktrees/*` if those branches are abandoned. Not blocking — `tsc --noEmit` passed, targeted lint passed, prod build succeeded.
+- **Initial diagnosis instinct was the same as the misdiagnosis recorded in PROGRESS.md (2026-05-13)** — "redirect URL allowlist" theory. The hash fragment in the URL the user pasted (`#error_code=otp_expired`) was the deciding evidence that this was prefetch-burning the token, not allowlist failure. Worth remembering: the URL hash is where Supabase puts the actionable error info.
+- **Admin password reset via Supabase Dashboard was the original "fast unblock" plan** — but the UI in the project's Auth → Users view didn't expose an "Edit user / Reset password" affordance. Skipped that path and went straight to the code fix; user's password was reset through the fixed flow at the end.
+
+**In progress**
+
+- _Nothing._ The fix is shipped, deployed (commit `2556699` on `origin/main`), template updated in Supabase Dashboard, end-to-end verified in prod.
+
+**Blocked**
+
+- _Nothing currently blocked._
+
+**Next session should pick up**
+
+The highest-value next item is the **Supabase keep-alive GitHub Actions workflow** (TODO.md → Later, first entry). It's ~20 lines of YAML + 1 GHA secret, prevents today's "project auto-paused → fetch error on login" from recurring, and the repo being public means GHA minutes are unlimited and free. Estimate: 15–30 min including a test run.
+
+After that, the **signup-callback follow-up** (TODO.md → Later, second entry) is the next natural code change — applies today's `token_hash` + `verifyOtp` pattern to the signup confirmation flow, which has the same prefetch vulnerability. Lower urgency (silent auto-confirm rather than locked-out user), but cleanest while the pattern is fresh.

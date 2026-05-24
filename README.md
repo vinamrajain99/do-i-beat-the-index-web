@@ -113,8 +113,8 @@ src/
 │   │   ├── login/               page + server action
 │   │   ├── signup/              page + server action (sends confirmation email)
 │   │   ├── forgot-password/     page + server action (sends reset email)
-│   │   ├── reset-password/      page + server action (sets new password)
-│   │   ├── callback/route.ts    exchanges email-link code for session
+│   │   ├── reset-password/      server page (reads token_hash) + form.tsx (client) + actions.ts (verifyOtp + updateUser)
+│   │   ├── callback/route.ts    exchanges email-link code for session (signup confirmation)
 │   │   └── sign-out/actions.ts  server action used by Sign out button
 │   └── dashboard/
 │       ├── page.tsx             list of analyses (max 5) + "+ New analysis" + per-row Delete

@@ -120,3 +120,40 @@ Audience is `"authenticated"` for both branches.
 - The forgot-password action's silent-on-failure behavior should arguably surface SMTP failures to *logs* even if not to the UI. Recorded as a follow-up in TODO.md → Phase 7 plan.
 - Once on a real provider, deliverability becomes about domain reputation. Using `onboarding@resend.dev` (Resend's shared verified sender) works but lands in spam more often. Phase 7 should ideally pair with a verified custom domain.
 - The Supabase MCP `get_logs` for the auth service was instrumental in diagnosing this — recording here so future debugging starts there for any auth-flow issue.
+
+---
+
+## 2026-05-23 — Password reset flow: `token_hash` + `verifyOtp` (verify-on-submit), not `?code=` exchange (verify-on-GET)
+
+**Context.** User reported that clicking the "Reset Password" link in the email landed them on `/auth/login?error=auth_code_invalid` instead of the reset-password form. The URL hash carried `error_code=otp_expired`. The reset link was being burned **before** the user clicked it — Gmail's link scanner pre-fetches incoming URLs as a safety feature, which GET-requests Supabase's `/auth/v1/verify` endpoint, consumes the single-use recovery token, and leaves the real click hitting a spent token. This breaks password reset for every Gmail user (and likely for users on any other mail provider that pre-scans links — Outlook, ProtonMail, corporate scanners).
+
+The old flow:
+
+```
+email link → Supabase /auth/v1/verify (GET) → /auth/callback?code=… → exchangeCodeForSession → /auth/reset-password
+```
+
+The vulnerability: the token is consumed by `/auth/v1/verify` on GET — and GETs are exactly what link pre-scanners issue.
+
+**Decision.** Switch the recovery flow to the `token_hash` + `verifyOtp` pattern. The email link goes **directly** to `/auth/reset-password?token_hash=…&type=recovery` (bypassing Supabase's verify endpoint entirely). The page renders the new-password form without touching the token. `verifyOtp({ type: 'recovery', token_hash })` is called only inside the form-submit action — which means the token is consumed by an explicit user button-press, not by a passive GET. Pre-scanners don't press buttons.
+
+**Implementation:**
+- `src/app/auth/forgot-password/actions.ts` — `redirectTo` now points at `/auth/reset-password` directly (no `?next=` indirection through `/auth/callback`).
+- `src/app/auth/reset-password/page.tsx` — converted to a server component reading `searchParams.token_hash` + `searchParams.type`, passing them to a child client form.
+- `src/app/auth/reset-password/form.tsx` — new file; the client-side form, renders the token in hidden `<input>` fields, disables Submit if no token.
+- `src/app/auth/reset-password/actions.ts` — server action reads `token_hash` from `FormData`, calls `verifyOtp` first (which sets the session cookie on success), then `updateUser({ password })`. Genuinely-expired tokens surface as a user-facing error in the form, not a redirect bounce.
+- **Paired Supabase Dashboard change** — edit "Reset Password" email template: link target swapped from `{{ .ConfirmationURL }}` to `{{ .SiteURL }}/auth/reset-password?token_hash={{ .TokenHash }}&type=recovery`. The template change is what causes the new emails to bypass Supabase's verify endpoint; without it, the new code does nothing useful.
+
+**Alternatives considered.**
+- **Make the email link send a 6-digit `{{ .Token }}` OTP code** that the user types into a form, instead of a link. Stronger phishing-resistance, but a worse UX (manual transcription) for a personal-portfolio app. Rejected.
+- **Implement Supabase's PKCE flow.** PKCE moves the secret to the client and binds the code exchange to the originating session, which also defeats prefetch (the prefetcher's "session" can't redeem the code). Conceptually cleaner but more code changes (needs a client-side `code_verifier` round-trip), and the `verifyOtp` approach achieves the same end-state of "consume the token only on explicit user action" with less surface area. Rejected for scope.
+- **Keep the old flow + tell Gmail users to whitelist sender / mark as safe to prevent pre-scanning.** Not actually possible — Gmail's link scanner runs regardless of sender reputation. Rejected (not feasible).
+- **Tell the user to copy-paste the link into a fresh browser tab** (since pre-scanners don't actually navigate the user's browser). Fragile workaround, doesn't help anyone but power users, doesn't fix the bug. Rejected.
+
+**Consequences.**
+- **`/auth/callback/route.ts` is no longer used by password reset** — it's still in the code path for signup email confirmation, which has the *same* prefetch vulnerability (lower impact: pre-scanner GET silently auto-confirms the account rather than locking the user out). Logged as a TODO.md → Later item to apply the same pattern to signup.
+- **The reset-password page is now a server component** with the form factored out — small structural change but worth noting if anyone tries to add state directly to the page in future. The form is at `src/app/auth/reset-password/form.tsx`.
+- **The flow now requires the Supabase email template to be correct.** A future Supabase template reset (manual or via dashboard reset-to-default) would silently break recovery. Worth a future test_sanity-style check that hits `/auth/reset-password` without a token_hash and confirms the form's "missing token" error is shown — at least catches the symptom in CI.
+- **Genuinely-expired tokens** (user waited >1hr to click) now surface as a clean in-form error message ("Reset link is invalid or has expired. Request a new password reset email.") instead of a redirect-bounce with hash-fragment error codes. Strictly better UX.
+- **The `code` flow still works for any unmodified email template** — but only as an accident of `/auth/callback` still being mounted. We're not relying on it; new emails should never trigger it.
+- **End-to-end verified in prod** 2026-05-23 by the user in an incognito Chrome window.
