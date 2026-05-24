@@ -268,17 +268,6 @@ vercel.json                      function config (maxDuration, memory)
 - The 5-analysis cap is enforced both in the UI and via a Postgres trigger (defense in depth).
 - CSVs are uploaded to a private bucket with per-user folder isolation; users can only read/write paths under `<their-uid>/...`.
 
-## Roadmap
-
-- [x] Phase 1: Auth (sign up, log in, password reset)
-- [x] Phase 2: New-analysis form + CSV upload to Supabase Storage
-- [x] Phase 3: Python analysis worker (math-only, local CLI)
-- [x] Phase 3.5: HTTP wrapper (`api/analyze.py`) + UI trigger/polling
-- [x] Phase 4: Results page — interactive Plotly chart + HTML summary table
-- [x] Phase 5: Delete-an-analysis UI to free a slot
-- [x] Phase 6: Deploy to Vercel (prod env vars + Auth redirect URLs, end-to-end smoke test in prod)
-- [x] Phase 7: Custom SMTP via Resend (shared sender — blocks non-owner recipients; custom-domain DNS is a precondition for opening the app to other users)
-
 ## License
 
 MIT. See [LICENSE](LICENSE).
