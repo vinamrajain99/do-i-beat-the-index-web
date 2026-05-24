@@ -181,3 +181,21 @@ The vulnerability: the token is consumed by `/auth/v1/verify` on GET — and GET
 - **Supabase Auth → URL Configuration Redirect URLs** should add `/auth/confirm` (prod + localhost variants). `/auth/callback` entries can stay or be removed — removing is cleaner hygiene. README.md updated accordingly.
 - **No code path now uses `exchangeCodeForSession`** in the entire app. If we ever add OAuth providers (Google sign-in, GitHub, etc.), we'll need to either re-create `/auth/callback` or use Supabase's PKCE flow directly. Worth remembering before adding social auth.
 - **Pattern is now consistent** across auth flows — recovery, signup, and any future email-link flow (magic-link login, email change) should all use `token_hash` + `verifyOtp`.
+
+---
+
+## 2026-05-24 — README is self-contained; no cross-repo reference to the CLI
+
+**Context.** Until today the project README opened with "Web app version of [do-i-beat-the-index](https://github.com/vinamrajain99/do-i-beat-the-index) — the same deposit-mirrored portfolio-vs-benchmark analysis, but with login, persistent saved analyses, and a browser UI." The CLI repo is the math source of truth (its `worker/`-equivalent files were copied into this project at Phase 3) and its README contains the most accurate write-up of the deposit-mirroring rationale. Linking out from the web app's README was the lazy choice — but conflates the two projects, makes the web README feel like a sub-project of the CLI, and creates a confusing dual-front for prospective contributors / users.
+
+**Decision.** Web README stands alone. No link to or mention of the CLI repo. The "Why this exists / What it does / How the math works (and why) / Money-weighted return" content from the CLI README is duplicated into this README (with light copyedits to match the web context — "this CLI" → "this app", removed the `test_sanity.py` subsection since those tests aren't ported here yet, etc.). All first-person author voice converted to third-person / passive / second-person.
+
+**Alternatives considered.**
+- **Keep the cross-repo link** — the easy default. Rejected as above: makes the web app feel like a port rather than its own product, and any reader genuinely investigating the math has to context-switch repos.
+- **Replace the link with a "math methodology" reference doc inside this repo** (e.g. `docs/methodology.md`) instead of inlining into the README. Rejected: discoverability cost — most readers scan the README and never click through to subdocs. The math rationale is core enough to belong at the top level.
+- **Strip the math discussion entirely; leave just the user-facing What/Usage**. Rejected: the deposit-mirroring choice is non-obvious and surprising enough that any user actually evaluating the app's validity deserves the rationale upfront. Hiding it would erode trust.
+
+**Consequences.**
+- **Math content is now duplicated** between the CLI repo's README and this one. There is no automatic sync; a future change to the math rationale (e.g. switching to a different DRIP assumption, adding fee modelling) needs to be reflected in both READMEs manually. Worth a note in CLAUDE.md if the divergence becomes a pain point — for now, the math is stable enough that manual sync is acceptable.
+- **The CLI repo's `test_sanity.py` is not currently ported** into this project's `worker/`. The web README omits the "How we know the math is right" subsection rather than referencing a file that doesn't exist here. The TODO.md "Port the CLI's test_sanity.py" item remains the appropriate place to track this gap; once ported, a section can be added to this README.
+- **No claim is made anywhere in the repo that the math was inherited from another project** — this is intentional. The math is what it is; its lineage is private project history, not user-facing context. If contributors ever ask "where did this come from?", CLAUDE.md still contains the path to the original CLI directory (`/Users/aayushipandit/Desktop/Claude-Work/do-i-beat-the-index/`) for internal reference.

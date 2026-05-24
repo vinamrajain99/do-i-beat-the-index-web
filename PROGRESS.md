@@ -242,3 +242,40 @@ The Resend custom-domain item is now the single highest-leverage thing on the li
 1. **Push the two new commits to `origin/main`** if not already done — Vercel auto-deploys from `main`, so the UI improvements aren't live until pushed. `git push origin main`.
 2. **Resend custom-domain setup** remains the top-of-list polish item (carrying over from prior session). ~10 min DNS work.
 3. After deploy, eyeball the overview cards on Vercel prod with real screen widths to confirm the side-by-side layout reads well on common mobile viewport sizes.
+
+## Session 2026-05-24 (cont. 2) — README rewrite + landing-page redesign
+
+**Shipped**
+
+- **README rewritten to stand alone** (commit `2e322cb`, pushed earlier in this session as `55d1aeb` for the banner-only first pass, then the full rewrite as `2e322cb`). [`README.md`](README.md) no longer references the CLI repo; the "Web app version of [do-i-beat-the-index]" framing is gone. New sections (ported + adapted from the CLI's README, with light edits): **Why this exists**, **What it does**, **How the math works (and why)** (sub-sections What gets mirrored / Why this is an honest DRIP comparison / Why individual buys aren't mirrored / Money-weighted return), **Usage** (4-step end-user flow: download CSV from Robinhood web, note current portfolio value, submit, read the report), **Privacy and data** (web-specific — Supabase Storage RLS, Yahoo Finance for prices only, shared Postgres price cache). Architecture / Local development / Project structure / Security notes / Roadmap / License preserved.
+- **All author-voice first-person stripped from the README**: "I've been susceptible" → "Many individual retail investors are susceptible"; "we mirror" / "We get that for free" / "when we say" → passive constructions ("What gets mirrored" / "This comes for free from using" / "when the simulation computes"); "did my picking beat indexing the same money I put in?" → "did your picking beat indexing the same money you put in?"; etc. Only first-person remaining is the title `# Do I beat the index?` — kept as the user's question to themselves.
+- **Landing page (`/`) fully redesigned** (commit `511bb1b`). [`src/app/page.tsx`](src/app/page.tsx) changes:
+  - **Title**: "Am I wasting my time and money by stock-picking?" → `Do you actually beat a simple <em>Buy Index</em> strategy?` with "Buy Index" rendered in italic via `<em>`.
+  - **Subtitle reworded twice** through user iteration; final text: "Compare how your investment picks have done vs index investing. Same money in/out, same cadence, accurate comparison. No broker login."
+  - **Eyebrow line now inline with GitHub link**: "FOR ROBINHOOD USERS · OPEN SOURCE ON GITHUB" (middle-dot separator matching the convention in `results-summary.tsx`'s metadata strip). The GitHub URL was wrong (pointed at `vinamrajain99/do-i-beat-the-index`, the now-disowned CLI repo); fixed to `vinamrajain99/do-i-beat-the-index-web`.
+  - **"How it works" rebuilt as 3 numbered steps** with shadcn-themed dark filled-circle badges (`bg-primary text-primary-foreground`, `h-7 w-7 rounded-full`), left-aligned text under a centered "HOW IT WORKS" eyebrow. Step 1 explicitly tells users to download the *full* Robinhood activity report (Account → Reports & Statements → Activity report) including all transactions from their very first one — incomplete history would skew XIRR/CAGR. Steps 2 and 3 cover upload+benchmarks+portfolio-value and the chart+table output respectively.
+  - **Hero spacing**: bumped from `space-y-3` (12 px) to `space-y-6` (24 px) on the eyebrow/title/subtitle stack — visually cramped before.
+  - **Dropped the old "Up to 5 saved analyses per account. Open source on GitHub." line** under the buttons; the open-source link now lives in the eyebrow instead.
+- **README polish commits earlier in the session**:
+  - `55d1aeb` (already pushed at the time of the prior /save-progress) — replaced the marketing-toned banner with a plain live URL + a callout noting signups are paused while custom-domain email is pending; reworded the Phase 7 roadmap line to match; added `src/lib/types.ts` to the file map.
+
+**Stumbles worth noting**
+
+- **CLI README path**: the path in CLAUDE.md (`/Users/aayushipandit/Desktop/Claude-Work/Robinhood portfolio analyser/`) was stale — the actual directory is `/Users/aayushipandit/Desktop/Claude-Work/do-i-beat-the-index`. Caught immediately by listing the parent dir. Worth a small CLAUDE.md fix on a future pass if the path is still wanted (it's only used as a reference pointer; nothing depends on it at build time).
+- **Section title "What we mirror" was missed in the first first-person sweep** — slipped through the initial grep because it's at a heading level. Caught on the final sweep and renamed to "What gets mirrored".
+- **The title "Do I beat the index?" was a deliberate carve-out** from the "no first-person" pass — it's read as the user's question to themselves (quiz-title voice), not author voice. Flagged to the user explicitly; they didn't ask to change it.
+- **Many copy iterations** on the landing page subtitle ("honest" → "accurate", removed "simple", removed "easily", removed "needed", removed "for accurate calculations"). User clearly has a strong voice and wants tight, deliberate copy — worth preserving exact phrasing on future copy work.
+
+**In progress**
+
+- _Nothing._ Two commits sit on local `main` ahead of `origin/main` (`2e322cb` README rewrite, `511bb1b` landing redesign), not pushed in this session — user has not yet asked. The earlier `55d1aeb` banner-only commit IS already on `origin/main` from the previous /save-progress's push.
+
+**Blocked**
+
+- _Same as prior 2026-05-24 entries_ — Resend custom-domain setup still blocks live signup-confirmation verification and any non-owner email recipient.
+
+**Next session should pick up**
+
+1. **Push the two new commits to `origin/main`** (`git push origin main`) so the README rewrite and landing-page redesign go live on Vercel. The landing page is the first thing any visitor sees on the deployed URL.
+2. **Resend custom-domain setup** remains the top-of-list polish item — carrying over from multiple prior sessions.
+3. Once pushed, eyeball the landing page on Vercel prod across desktop + mobile widths. The numbered-steps layout is new; worth confirming the step-number circles align well with the first line of step text on small screens.
