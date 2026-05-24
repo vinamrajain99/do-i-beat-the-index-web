@@ -30,6 +30,25 @@ export function PlotlyChart({ figureJson }: Props) {
         await Plotly.newPlot(node, fig.data, fig.layout, {
           responsive: true,
           displaylogo: false,
+          modeBarButtonsToRemove: [
+            "lasso2d",
+            "select2d",
+            "autoScale2d",
+            "resetScale2d",
+          ],
+          modeBarButtonsToAdd: [
+            {
+              name: "Reset",
+              title: "Reset",
+              icon: Plotly.Icons.home,
+              click: (gd) => {
+                void Plotly.relayout(gd, {
+                  "xaxis.autorange": true,
+                  "yaxis.autorange": true,
+                });
+              },
+            },
+          ],
         });
         plotted = true;
       } catch (e) {
