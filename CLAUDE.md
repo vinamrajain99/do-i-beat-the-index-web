@@ -237,4 +237,4 @@ next.config.ts                     server-actions body limit + dev-only rewrite 
   - `~/.claude/plans/1-csv-export-route-kind-hartmanis.md` — deposit-mirror design rationale
   - `~/.claude/plans/resumed-functional-unicorn.md` — Phases 1–3 plan
   - `~/.claude/plans/get-yourself-familiarized-with-snoopy-hickey.md` — Phase 3.5 plan
-- **Supabase project ref**: `vqrbapbmzvqxjexgtxnf` (use with `mcp__supabase__*` tools)
+- **Supabase project ref**: extract from `NEXT_PUBLIC_SUPABASE_URL` in `.env.local` (the subdomain before `.supabase.co`). Use that string with `mcp__supabase__*` tools.
