@@ -14,9 +14,9 @@ The "what just shipped / what's next / what we decided" trail is split across th
 append-only files at the repo root. Read them at the start of every session
 before touching code:
 
-- **PROGRESS.md** — session log
-- **TODO.md** — backlog + blocked items
-- **DECISIONS.md** — ADR-style architectural decision log
+- **PROGRESS.md** — session log. **Gitignored, local-only** (contains debugging narratives and personal info kept off the public repo). Does not transfer with `git clone`; copy manually when moving machines.
+- **TODO.md** — backlog + blocked items. Tracked publicly (scrubbed of personal info).
+- **DECISIONS.md** — ADR-style architectural decision log. Tracked publicly (scrubbed of personal info).
 
 This file (CLAUDE.md) is the durable context — architecture, locked-in math,
 conventions, gotchas. Do NOT add session-specific work notes here.

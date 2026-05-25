@@ -230,3 +230,39 @@ The vulnerability: the token is consumed by `/auth/v1/verify` on GET — and GET
 - **Auth and dashboard headers are now load-bearing on the nav.** If a future change ever removes the nav from a specific route (a future onboarding wizard, say), the brand-as-home link and the Sign-out affordance need to be re-added page-locally for that route. Future Claude instances should resist re-adding a Sign-out form or Home link inside those pages while the nav still owns them.
 - **`/about` is intentionally public and not in `PROTECTED_PREFIXES`.** If a future change introduces a "protect everything" default in the proxy, `/about` should remain whitelisted as a public route.
 - **The Sonner Toaster (`position="top-center"`) sits above the sticky nav.** Toasts overlap the nav visually for the first ~50 px when one appears. Not currently a UX issue because no flow that shows a toast also requires reading the top of the nav simultaneously, but worth knowing if a future change adds toasts to a nav-heavy flow.
+
+---
+
+## 2026-05-25 — Repo-privacy hygiene: gitignore PROGRESS.md; scrub-and-publish TODO/DECISIONS/CLAUDE
+
+**Context.** The repo is public. Session-handoff files (`PROGRESS.md`, `TODO.md`, `DECISIONS.md`) and `CLAUDE.md` had been committed since the start of the project. An audit during this session surfaced personal info in all four:
+
+- Owner email (`vinamrajain99@gmail.com`) appearing ~8 times across the four files.
+- macOS username via absolute paths (`/Users/aayushipandit/Desktop/Claude-Work/...`) appearing in CLAUDE.md, DECISIONS.md, and PROGRESS.md.
+- Supabase project ref (`vqrbapbmzvqxjexgtxnf`) in CLAUDE.md.
+- Detailed "stumbles" and debugging narratives in PROGRESS.md — not sensitive, but unusual to publish.
+
+No actual credentials were ever in any of the files (no service-role keys, JWT secrets, Resend API keys, anon keys, or passwords) — verified by targeted grep.
+
+**Decision.**
+
+- **`PROGRESS.md` stays gitignored** (`.gitignore` line added). Lives on the local machine only. The file has the densest concentration of candid debugging narrative + personal info, and the marginal value of publishing it doesn't justify the scrubbing effort to keep it safe.
+- **`TODO.md` and `DECISIONS.md` are tracked publicly, scrubbed of personal info.** All literal email mentions replaced with "owner email"/"owner account"; all literal home-directory paths replaced with the GitHub-repo URL or with `(local reference)`. They go on the public repo so future Claude sessions cloning to a new machine still have the architectural-decision log + backlog.
+- **`CLAUDE.md` stays tracked publicly, scrubbed of personal info.** Same email-and-path treatment; the Supabase project ref also removed and replaced with "extract from `NEXT_PUBLIC_SUPABASE_URL` in `.env.local`" — keeps the MCP-tool guidance useful for any future local session.
+- **Git history is left untouched** (no `git filter-repo`). Historical SHAs on GitHub still contain the unscrubbed values; the destructive rewrite isn't worth it for content that's borderline-personal but never credential-grade.
+
+**Alternatives considered.**
+
+- **Gitignore all four files.** Cleanest privacy outcome but loses the entire architectural-decision log + backlog from a fresh clone. Future Claude sessions on a new machine would be starting blind. Rejected because DECISIONS.md is the highest-value artifact for not re-litigating settled decisions, and TODO.md is the only place the backlog lives. The right move was to keep the high-signal stuff public (scrubbed) and only gitignore the narrative-heavy file (PROGRESS.md).
+- **Leave everything as-is.** Option offered to the user; rejected because the macOS-username paths created a public link between the GitHub identity (`vinamrajain99`) and a different name (`aayushipandit`) — worth scrubbing even though there were no actual security risks.
+- **`git filter-repo --replace-text` to purge historical SHAs too.** Rejected as overkill for the actual risk level. Logged as an optional `TODO.md → Later` item if the historical exposure ever turns into a real problem.
+- **Move PROGRESS/TODO/DECISIONS into a separate private GitHub repo and sync via submodule or sibling clone.** More portable than the gitignore approach (PROGRESS would transfer cleanly on a fresh machine) but high overhead for a single-developer project. Rejected for now; user can adopt later if they end up working across many machines.
+
+**Consequences.**
+
+- **PROGRESS.md does not transfer with `git clone`.** When setting up the project on a new machine, the file has to be copied manually (AirDrop, iCloud Drive, USB, etc.) or the session log starts fresh. CLAUDE.md's "Session handoff state" section now explicitly notes this.
+- **Future PROGRESS.md updates can be candid.** Since it's local-only, debugging narratives, "stumbles" content, raw observations, and any personal info don't need scrubbing. Just write naturally.
+- **Future TODO.md and DECISIONS.md updates must continue avoiding personal info.** No emails, home-directory paths, real project IDs, etc. Anyone adding entries should treat them as public docs (because they are).
+- **The single owner-account email reference** (line 35 of TODO.md, in the Blocked section about Resend's sandbox) now reads "owner-email account" — slightly less specific but still understandable in context.
+- **Historical SHAs on GitHub still contain the unscrubbed values** until/unless someone runs `git filter-repo`. Anyone curious can find them via `github.com/.../blob/<old-sha>/CLAUDE.md` or via the file's commit-history view. Not a practical concern for the threat model (no credentials were ever in these files), but worth knowing.
+- **Three commits document the privacy work**: `0b52752` (initial gitignore + untrack), `09273ba` (scrub + re-track TODO/DECISIONS), `718d0bb` (Supabase project ref scrub). The commit messages are sufficient handoff for someone reading via `git log` rather than these files.
