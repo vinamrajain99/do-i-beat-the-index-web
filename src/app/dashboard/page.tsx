@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { signOutAction } from "@/app/auth/sign-out/actions";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -68,18 +67,8 @@ export default async function DashboardPage() {
 
   return (
     <main className="flex-1 flex flex-col px-6 py-8 gap-6 max-w-3xl mx-auto w-full">
-      <header className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Your analyses</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Signed in as <strong>{user.email}</strong>
-          </p>
-        </div>
-        <form action={signOutAction}>
-          <Button type="submit" variant="outline" size="sm">
-            Sign out
-          </Button>
-        </form>
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight">Your analyses</h1>
       </header>
 
       <div className="flex items-center justify-between gap-3">

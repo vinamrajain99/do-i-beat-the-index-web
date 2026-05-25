@@ -33,9 +33,8 @@ export default async function LandingPage() {
             Do you actually beat a simple <em>Buy Index</em> strategy?
           </h1>
           <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-            Compare how your investment picks have done vs index investing.
-            Same money in/out, same cadence, accurate comparison. No broker
-            login.
+            Compare how your investment picks have done vs index investing. No
+            broker login.
           </p>
         </div>
 
