@@ -103,6 +103,7 @@ Metric values that would be NaN/Inf (e.g. XIRR on a deeply negative portfolio) a
 - **Chart and metrics table are decoupled.** `worker/chart.py` returns a chart-only Plotly figure. The metrics summary is rendered as a native HTML `<table>` in `src/app/dashboard/[id]/results-summary.tsx`. The HTML version is theme-aware, accessible, and easy to restyle. See DECISIONS.md.
 - **Both password reset and signup confirmation use `token_hash` + `verifyOtp` (verify-on-submit), not `?code=` exchange (verify-on-GET).** Email links point directly at `/auth/reset-password?token_hash=…&type=recovery` or `/auth/confirm?token_hash=…&type=email`; `verifyOtp` runs only inside the form's submit action so link pre-scanners (Gmail, etc.) can't burn the single-use token. **Two paired Supabase Dashboard email templates** must use the right URL: "Reset Password" → `{{ .SiteURL }}/auth/reset-password?token_hash={{ .TokenHash }}&type=recovery`; "Confirm signup" → `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`. If either gets reset to the default `{{ .ConfirmationURL }}`, that flow silently breaks. `/auth/callback` has been deleted (no remaining caller). See DECISIONS.md (2026-05-23, two entries).
 - **Page layout uses per-card max-widths**, not a single page-level constraint. Outer `<main>` is `max-w-7xl`; text-shaped cards (header, overview section, queued, failed) carry `max-w-3xl mx-auto w-full` individually; the results card spans the full 1280 px. The overview "section" wraps a 2-column md grid of two cards (Cash flow + Current value), so the `max-w-3xl` is on the section, not each inner card. When adding new cards, be deliberate about which width to apply. See DECISIONS.md.
+- **Global nav is load-bearing for brand-as-home + Sign out + page links.** `src/components/nav-bar.tsx` is mounted in the root layout above every route, including `/auth/*`. The `/auth/*` layout no longer has a local "← Home" link and `/dashboard` no longer has a local Sign-out form — both moved into the nav. If a future change removes the nav for a specific route (e.g. an onboarding wizard), those affordances need to be re-added page-locally. Conversely: don't re-add a Sign-out form inside a dashboard page while the nav still owns it. `/about` is intentionally public (not in `PROTECTED_PREFIXES`). See DECISIONS.md (2026-05-25).
 
 ## Local development
 
@@ -160,10 +161,11 @@ npm run lint                                            # eslint
 ```
 src/
 ├── app/
-│   ├── layout.tsx                 root layout + Sonner Toaster
+│   ├── layout.tsx                 root layout + global NavBar + Sonner Toaster
 │   ├── page.tsx                   landing (redirects to /dashboard if signed in)
+│   ├── about/page.tsx             /about — public methodology page (server; gates closing CTA on !user)
 │   ├── auth/
-│   │   ├── layout.tsx             centered card wrapper
+│   │   ├── layout.tsx             centered card wrapper (no local Home link — global nav owns it)
 │   │   ├── login/                 page + action (signInWithPassword)
 │   │   ├── signup/                page + action (signUp + confirm email)
 │   │   ├── forgot-password/       page + action (resetPasswordForEmail; redirectTo → /auth/reset-password)
@@ -171,7 +173,7 @@ src/
 │   │   ├── confirm/               same shape as reset-password, but for signup email confirmation: page (server) + form.tsx (client, single "Confirm email" button) + actions.ts (verifyOtp({type:'email'}) → /dashboard)
 │   │   └── sign-out/actions.ts    signOut + redirect
 │   └── dashboard/
-│       ├── page.tsx               list of analyses (max 5) + "+ New analysis" CTA + per-row Delete
+│       ├── page.tsx               list of analyses (max 5) + "+ New analysis" CTA + per-row Delete (no local Sign-out — global nav owns it)
 │       ├── actions.ts             deleteAnalysisAction (row delete + CSV cleanup + redirect)
 │       ├── delete-button.tsx      client: confirm + invoke deleteAnalysisAction
 │       ├── new/
@@ -182,7 +184,10 @@ src/
 │           ├── analysis-runner.tsx  client: POST /api/analyze + 3s polling
 │           ├── plotly-chart.tsx   client: dynamic import of plotly.js-dist-min + Plotly.newPlot
 │           └── results-summary.tsx  server: HTML metrics table (Your portfolio + benchmarks + Δ)
-├── components/ui/                 Button, Input, Label, Card (shadcn primitives)
+├── components/
+│   ├── nav-bar.tsx                global top sticky nav (server; getUser-aware; signed-in vs signed-out variants)
+│   ├── nav-link.tsx               client child of nav-bar; active-route highlight via usePathname
+│   └── ui/                        Button, Input, Label, Card (shadcn primitives)
 ├── lib/
 │   ├── utils.ts                   cn() helper
 │   ├── types.ts                   Analysis + ResultsJson/MetricsSummary types + caps

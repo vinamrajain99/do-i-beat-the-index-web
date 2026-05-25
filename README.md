@@ -209,8 +209,9 @@ completed row is a clean no-op.
 ```
 src/
 ├── app/
-│   ├── layout.tsx               root layout, fonts, Toaster
+│   ├── layout.tsx               root layout, fonts, global NavBar, Toaster
 │   ├── page.tsx                 landing page (redirects to /dashboard if signed in)
+│   ├── about/page.tsx           public methodology page (motivation, math, data sources)
 │   ├── auth/
 │   │   ├── layout.tsx           centered card layout for all auth pages
 │   │   ├── login/               page + server action
@@ -231,7 +232,10 @@ src/
 │           ├── analysis-runner.tsx  client: POST /api/analyze + 3s polling
 │           ├── plotly-chart.tsx     client: dynamic-imported Plotly.newPlot
 │           └── results-summary.tsx  server: HTML metrics table
-├── components/ui/               shadcn primitives (Button, Input, Label, Card)
+├── components/
+│   ├── nav-bar.tsx              global top sticky nav (server; signed-in vs signed-out variants)
+│   ├── nav-link.tsx             client child of nav-bar; active-route highlight
+│   └── ui/                      shadcn primitives (Button, Input, Label, Card)
 ├── lib/
 │   ├── utils.ts                 cn() helper
 │   ├── types.ts                 Analysis + ResultsJson types + UI caps (MAX_ANALYSES_PER_USER, etc.)
