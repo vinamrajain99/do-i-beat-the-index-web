@@ -4,7 +4,7 @@
 
 Web app version of a Robinhood portfolio analyser. Multi-user, persisted analyses, browser UI.
 
-- **CLI companion** (source of the math): `/Users/aayushipandit/Desktop/Claude-Work/do-i-beat-the-index/`, public at https://github.com/vinamrajain99/do-i-beat-the-index (MIT).
+- **CLI companion** (source of the math): https://github.com/vinamrajain99/do-i-beat-the-index (MIT).
 - **This repo on GitHub:** https://github.com/vinamrajain99/do-i-beat-the-index-web (public).
 - **Production deploy:** https://do-i-beat-the-index-web.vercel.app — Vercel Hobby tier, builds from `main`. Phases 1–6 shipped.
 
@@ -108,7 +108,7 @@ Metric values that would be NaN/Inf (e.g. XIRR on a deeply negative portfolio) a
 ## Local development
 
 ```bash
-cd /Users/aayushipandit/Desktop/Claude-Work/do-i-beat-the-index-web
+cd do-i-beat-the-index-web
 cp .env.local.example .env.local
 # fill in the four Supabase credentials (the JWT secret is optional for
 # projects on the asymmetric-key auth flow; leave blank if so)
@@ -232,10 +232,9 @@ next.config.ts                     server-actions body limit + dev-only rewrite 
 
 ## Reference
 
-- **CLI companion** (math source + design docs, **internal-only reference** — README.md no longer mentions this repo, see DECISIONS.md 2026-05-24 "README is self-contained"): `/Users/aayushipandit/Desktop/Claude-Work/do-i-beat-the-index/CLAUDE.md`. The CLI's `test_sanity.py` is the regression target if you want to port it.
+- **CLI companion** (math source + design docs, **internal-only reference** — README.md no longer mentions this repo, see DECISIONS.md 2026-05-24 "README is self-contained"): https://github.com/vinamrajain99/do-i-beat-the-index. The CLI's `test_sanity.py` is the regression target if you want to port it.
 - **Plan files used historically**:
   - `~/.claude/plans/1-csv-export-route-kind-hartmanis.md` — deposit-mirror design rationale
   - `~/.claude/plans/resumed-functional-unicorn.md` — Phases 1–3 plan
   - `~/.claude/plans/get-yourself-familiarized-with-snoopy-hickey.md` — Phase 3.5 plan
-- **User**: vinamrajain99@gmail.com / GitHub `vinamrajain99`
 - **Supabase project ref**: `vqrbapbmzvqxjexgtxnf` (use with `mcp__supabase__*` tools)

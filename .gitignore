@@ -37,10 +37,10 @@ yarn-error.log*
 # Claude Code local state
 .claude/
 
-# Session handoff files — kept local, not published to the public repo
+# Session handoff files — PROGRESS.md kept local (contains debugging
+# narratives, candid stumbles, and personal info we'd rather not publish).
+# TODO.md and DECISIONS.md are tracked publicly (scrubbed of personal info).
 PROGRESS.md
-TODO.md
-DECISIONS.md
 
 # vercel
 .vercel
